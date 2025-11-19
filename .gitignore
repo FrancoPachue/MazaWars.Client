@@ -10,7 +10,7 @@ mono_crash.*.json
 export_presets.cfg
 
 # C# / .NET
-*.sln
+# *.sln - Allow .sln files for Visual Studio support
 .vs/
 *.userprefs
 *.csproj.user
