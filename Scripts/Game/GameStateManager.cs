@@ -61,6 +61,9 @@ public partial class GameStateManager : Node
 		_updatesReceived++;
 		_lastUpdateTime = DateTime.UtcNow;
 
+		// Get server time from update (for state buffering)
+		float serverTime = update.ServerTime;
+
 		// Update acknowledged inputs for reconciliation
 		if (update.AcknowledgedInputs != null && update.AcknowledgedInputs.TryGetValue(_localPlayerId, out uint ackedSeq))
 		{
@@ -72,7 +75,7 @@ public partial class GameStateManager : Node
 		{
 			foreach (var playerState in update.Players)
 			{
-				UpdateOrSpawnPlayer(playerState);
+				UpdateOrSpawnPlayer(playerState, serverTime);
 			}
 
 			// Remove disconnected players
@@ -80,7 +83,7 @@ public partial class GameStateManager : Node
 		}
 	}
 
-	private void UpdateOrSpawnPlayer(PlayerStateUpdate playerState)
+	private void UpdateOrSpawnPlayer(PlayerStateUpdate playerState, float serverTime)
 	{
 		if (string.IsNullOrEmpty(playerState.PlayerId))
 			return;
@@ -89,7 +92,7 @@ public partial class GameStateManager : Node
 		if (_players.TryGetValue(playerState.PlayerId, out var existingPlayer))
 		{
 			// Update existing player
-			UpdatePlayer(existingPlayer, playerState);
+			UpdatePlayer(existingPlayer, playerState, serverTime);
 		}
 		else
 		{
@@ -128,7 +131,7 @@ public partial class GameStateManager : Node
 		GD.Print($"[GameStateManager] Spawned player {player.PlayerName} ({playerState.PlayerId}) at {player.Position}");
 	}
 
-	private void UpdatePlayer(Player player, PlayerStateUpdate state)
+	private void UpdatePlayer(Player player, PlayerStateUpdate state, float serverTime)
 	{
 		if (player.IsLocalPlayer)
 		{
@@ -137,12 +140,13 @@ public partial class GameStateManager : Node
 		}
 		else
 		{
-			// Remote players: update position and state
+			// Remote players: update position and state with buffering
 			player.UpdateFromServerState(
 				state.Position,
 				state.Velocity,
 				state.CurrentHealth,
-				state.MaxHealth
+				state.MaxHealth,
+				serverTime
 			);
 		}
 	}

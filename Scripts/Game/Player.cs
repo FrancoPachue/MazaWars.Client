@@ -1,5 +1,6 @@
 using Godot;
 using System;
+using System.Collections.Generic;
 using System.Numerics;
 
 namespace MazeWars.Client.Scripts.Game;
@@ -7,12 +8,25 @@ namespace MazeWars.Client.Scripts.Game;
 /// <summary>
 /// Represents a player in the game world
 /// Supports client-side prediction and server reconciliation
+/// Remote players use state buffering for ultra-smooth interpolation
 /// </summary>
 public partial class Player : CharacterBody2D
 {
 	[Export] public float MoveSpeed { get; set; } = 300f;
 	[Export] public float SprintMultiplier { get; set; } = 1.5f;
 	[Export] public float ReconciliationThreshold { get; set} = 2.0f; // Units of error before correction
+	[Export] public float InterpolationDelay { get; set; } = 0.1f; // 100ms delay for remote players (state buffering)
+
+	/// <summary>
+	/// Snapshot of player state at a specific time
+	/// </summary>
+	public struct StateSnapshot
+	{
+		public Godot.Vector2 Position;
+		public Godot.Vector2 Velocity;
+		public float ServerTime;
+		public float Health;
+	}
 
 	// Player data
 	public string PlayerId { get; set; }
@@ -28,11 +42,15 @@ public partial class Player : CharacterBody2D
 	// Server state (for reconciliation and interpolation)
 	private Godot.Vector2 _serverPosition;
 	private Godot.Vector2 _serverVelocity;
-	private float _interpolationSpeed = 15f;
 
 	// Client prediction state
 	private Godot.Vector2 _predictedPosition;
 	private Godot.Vector2 _predictedVelocity;
+
+	// State buffering for remote players (smooth interpolation)
+	private Queue<StateSnapshot> _stateBuffer = new Queue<StateSnapshot>();
+	private const int MAX_BUFFER_SIZE = 30; // ~0.5 seconds at 60 updates/sec
+	private float _clientStartTime;
 
 	// Reconciliation stats
 	private int _reconciliationsPerformed = 0;
@@ -45,10 +63,12 @@ public partial class Player : CharacterBody2D
 
 	public override void _Ready()
 	{
+		_clientStartTime = (float)Time.GetTicksMsec() / 1000f;
+
 		// Get or create visual components
 		_sprite = GetNodeOrNull<ColorRect>("Sprite");
 		_nameLabel = GetNodeOrNull<Label>("NameLabel");
-		_healthBar = GetNodeOrNull<ProgressBar>("HealthBar");
+		_healthBar = GetNodeOrNull<Label>("HealthBar");
 
 		if (_sprite == null)
 		{
@@ -124,8 +144,8 @@ public partial class Player : CharacterBody2D
 		}
 		else
 		{
-			// Remote players: interpolate to server position
-			InterpolateToServerPosition(delta);
+			// Remote players: use state buffering for ultra-smooth interpolation
+			InterpolateFromBuffer(delta);
 		}
 	}
 
@@ -152,12 +172,111 @@ public partial class Player : CharacterBody2D
 
 	/// <summary>
 	/// Sets the server's authoritative position and velocity
-	/// Used for reconciliation
+	/// For remote players, buffers the state for smooth interpolation
+	/// For local player, used for reconciliation
 	/// </summary>
 	public void SetServerPosition(Godot.Vector2 position, Godot.Vector2 velocity)
 	{
 		_serverPosition = position;
 		_serverVelocity = velocity;
+	}
+
+	/// <summary>
+	/// Buffers a server state snapshot for remote player interpolation
+	/// </summary>
+	public void BufferServerState(Godot.Vector2 position, Godot.Vector2 velocity, float health, float serverTime)
+	{
+		if (IsLocalPlayer)
+			return; // Local player doesn't use buffering
+
+		var snapshot = new StateSnapshot
+		{
+			Position = position,
+			Velocity = velocity,
+			ServerTime = serverTime,
+			Health = health
+		};
+
+		_stateBuffer.Enqueue(snapshot);
+
+		// Maintain buffer size (keep last ~0.5 seconds)
+		while (_stateBuffer.Count > MAX_BUFFER_SIZE)
+		{
+			_stateBuffer.Dequeue();
+		}
+	}
+
+	/// <summary>
+	/// Interpolates position from buffered snapshots
+	/// Renders player "in the past" for ultra-smooth movement
+	/// </summary>
+	private void InterpolateFromBuffer(double delta)
+	{
+		// Need at least 2 snapshots to interpolate
+		if (_stateBuffer.Count < 2)
+		{
+			// Fallback to simple interpolation if buffer not ready
+			InterpolateToServerPosition(delta);
+			return;
+		}
+
+		// Calculate render time (current time - interpolation delay)
+		float currentTime = (float)Time.GetTicksMsec() / 1000f - _clientStartTime;
+		float renderTime = currentTime - InterpolationDelay;
+
+		// Find the two snapshots to interpolate between
+		StateSnapshot? from = null;
+		StateSnapshot? to = null;
+
+		var snapshots = _stateBuffer.ToArray();
+		for (int i = 0; i < snapshots.Length - 1; i++)
+		{
+			if (snapshots[i].ServerTime <= renderTime && snapshots[i + 1].ServerTime >= renderTime)
+			{
+				from = snapshots[i];
+				to = snapshots[i + 1];
+				break;
+			}
+		}
+
+		// If we found valid snapshots, interpolate between them
+		if (from.HasValue && to.HasValue)
+		{
+			// Calculate interpolation factor
+			float duration = to.Value.ServerTime - from.Value.ServerTime;
+			float t = duration > 0 ? (renderTime - from.Value.ServerTime) / duration : 0f;
+			t = Mathf.Clamp(t, 0f, 1f);
+
+			// Interpolate position
+			Position = from.Value.Position.Lerp(to.Value.Position, t);
+
+			// Update velocity for visual feedback
+			_serverVelocity = from.Value.Velocity.Lerp(to.Value.Velocity, t);
+
+			// Interpolate health
+			float interpolatedHealth = Mathf.Lerp(from.Value.Health, to.Value.Health, t);
+			UpdateHealth(interpolatedHealth, _maxHealth);
+
+			// Update visuals based on velocity
+			UpdateRemotePlayerVisuals(delta);
+		}
+		else
+		{
+			// No valid snapshots found, use latest snapshot or fallback
+			if (_stateBuffer.Count > 0)
+			{
+				var latest = _stateBuffer.ToArray()[_stateBuffer.Count - 1];
+				Position = Position.Lerp(latest.Position, 10f * (float)delta);
+				_serverVelocity = latest.Velocity;
+				UpdateRemotePlayerVisuals(delta);
+			}
+		}
+
+		// Clean up old snapshots (older than render time - 1 second)
+		while (_stateBuffer.Count > 0 && _stateBuffer.Peek().ServerTime < renderTime - 1.0f)
+		{
+			_stateBuffer.Dequeue();
+		}
 	}
 
 	/// <summary>
@@ -219,22 +338,38 @@ public partial class Player : CharacterBody2D
 	}
 
 	/// <summary>
-	/// Interpolates remote player to server position smoothly
+	/// Interpolates remote player to server position smoothly (fallback)
 	/// </summary>
 	private void InterpolateToServerPosition(double delta)
 	{
 		// Smooth interpolation to server position
-		Position = Position.Lerp(_serverPosition, _interpolationSpeed * (float)delta);
+		Position = Position.Lerp(_serverPosition, 15f * (float)delta);
 
+		UpdateRemotePlayerVisuals(delta);
+	}
+
+	/// <summary>
+	/// Updates visual feedback for remote players based on velocity
+	/// </summary>
+	private void UpdateRemotePlayerVisuals(double delta)
+	{
 		// Update sprite direction based on velocity
 		if (_serverVelocity.LengthSquared() > 0.01f)
 		{
 			// Visual feedback: scale sprite slightly when moving
 			_sprite.Scale = Godot.Vector2.One * 1.1f;
+
+			// Smooth rotation towards movement direction
+			if (_serverVelocity.X != 0)
+			{
+				float targetRotation = _serverVelocity.X > 0 ? 0.1f : -0.1f;
+				_sprite.Rotation = Mathf.Lerp(_sprite.Rotation, targetRotation, 10f * (float)delta);
+			}
 		}
 		else
 		{
 			_sprite.Scale = Godot.Vector2.One;
+			_sprite.Rotation = Mathf.Lerp(_sprite.Rotation, 0, 10f * (float)delta);
 		}
 	}
 
@@ -288,10 +423,14 @@ public partial class Player : CharacterBody2D
 		}
 	}
 
-	public void UpdateFromServerState(System.Numerics.Vector2 position, System.Numerics.Vector2 velocity, float health, float maxHealth)
+	public void UpdateFromServerState(System.Numerics.Vector2 position, System.Numerics.Vector2 velocity, float health, float maxHealth, float serverTime)
 	{
-		SetServerPosition(new Godot.Vector2(position.X, position.Y), new Godot.Vector2(velocity.X, velocity.Y));
-		UpdateHealth(health, maxHealth);
+		var godotPos = new Godot.Vector2(position.X, position.Y);
+		var godotVel = new Godot.Vector2(velocity.X, velocity.Y);
+
+		SetServerPosition(godotPos, godotVel);
+		BufferServerState(godotPos, godotVel, health, serverTime);
+		_maxHealth = maxHealth;
 	}
 
 	public Godot.Vector2 GetPosition()
@@ -319,7 +458,7 @@ public partial class Player : CharacterBody2D
 	public string GetPredictionDebugInfo()
 	{
 		if (!IsLocalPlayer)
-			return "Remote player";
+			return $"Remote | Buffer: {_stateBuffer.Count}/{MAX_BUFFER_SIZE}";
 
 		return $"Prediction Error: {_lastPredictionError:F2} (Max: {_maxPredictionError:F2}) | " +
 		       $"Reconciliations: {_reconciliationsPerformed}";
