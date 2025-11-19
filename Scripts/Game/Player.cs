@@ -14,7 +14,7 @@ public partial class Player : CharacterBody2D
 {
 	[Export] public float MoveSpeed { get; set; } = 300f;
 	[Export] public float SprintMultiplier { get; set; } = 1.5f;
-	[Export] public float ReconciliationThreshold { get; set} = 2.0f; // Units of error before correction
+	[Export] public float ReconciliationThreshold { get; set; } = 2.0f; // Units of error before correction
 	[Export] public float InterpolationDelay { get; set; } = 0.1f; // 100ms delay for remote players (state buffering)
 
 	/// <summary>
