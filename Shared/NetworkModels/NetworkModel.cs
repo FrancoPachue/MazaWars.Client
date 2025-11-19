@@ -1,6 +1,7 @@
-﻿using System.Collections.Generic;
-using MazeWars.GameServer.Models;
+﻿using System;
+using System.Collections.Generic;
 using System.Net;
+using MazeWars.GameServer.Models;
 
 public class ConnectedClient
 {
