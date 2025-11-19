@@ -1,0 +1,63 @@
+# Godot 4+ specific ignores
+.godot/
+.mono/
+data_*/
+mono_crash.*.json
+
+# Godot-specific
+*.import
+*.translation
+export_presets.cfg
+
+# C# / .NET
+*.sln
+.vs/
+*.userprefs
+*.csproj.user
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+bin/
+obj/
+*.DotSettings.user
+
+# Rider
+.idea/
+*.sln.iml
+
+# Visual Studio Code
+.vscode/
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Build results
+[Dd]ebug/
+[Dd]ebugPublic/
+[Rr]elease/
+[Rr]eleases/
+x64/
+x86/
+build/
+bld/
+[Bb]in/
+[Oo]bj/
+
+# NuGet Packages
+*.nupkg
+**/packages/*
+!**/packages/build/
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+*~
