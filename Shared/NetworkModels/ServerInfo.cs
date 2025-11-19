@@ -1,4 +1,5 @@
-﻿using MazeWars.GameServer.Models;
+﻿using System.Collections.Generic;
+using MazeWars.GameServer.Models;
 
 namespace MazeWars.GameServer.Network.Models;
 

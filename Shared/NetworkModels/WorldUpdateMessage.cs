@@ -1,4 +1,5 @@
-﻿using MessagePack;
+﻿using System.Collections.Generic;
+using MessagePack;
 
 namespace MazeWars.GameServer.Network.Models;
 
