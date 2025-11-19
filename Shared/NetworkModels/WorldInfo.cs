@@ -1,4 +1,6 @@
-﻿namespace MazeWars.GameServer.Network.Models;
+﻿using System;
+
+namespace MazeWars.GameServer.Network.Models;
 
 public class WorldInfo
 {
