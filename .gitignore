@@ -7,6 +7,7 @@ mono_crash.*.json
 # Godot-specific
 *.import
 *.translation
+*.uid
 export_presets.cfg
 
 # C# / .NET
