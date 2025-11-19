@@ -144,7 +144,7 @@ public partial class GameStateManager : Node
 			player.UpdateFromServerState(
 				state.Position,
 				state.Velocity,
-				state.CurrentHealth,
+				state.Health,
 				state.MaxHealth,
 				serverTime
 			);
@@ -157,7 +157,7 @@ public partial class GameStateManager : Node
 	private void ReconcileLocalPlayer(Player player, PlayerStateUpdate serverState)
 	{
 		// Always update health (non-predicted state)
-		player.UpdateHealth(serverState.CurrentHealth, serverState.MaxHealth);
+		player.UpdateHealth(serverState.Health, serverState.MaxHealth);
 
 		if (!EnableReconciliation)
 		{
