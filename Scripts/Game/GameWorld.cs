@@ -157,16 +157,18 @@ public partial class GameWorld : Node2D
 		var localPlayerPos = _gameStateManager?.LocalPlayer?.GlobalPosition ?? Vector2.Zero;
 		var currentRoom = GetRoomAtPosition(localPlayerPos);
 
-		_debugLabel.Text = $"═══ MazeWars Client v0.1.0-alpha (Phase 1) ═══\n" +
-		                   $"Player ID: {_networkManager.PlayerId}\n" +
-		                   $"Position: ({localPlayerPos.X:F0}, {localPlayerPos.Y:F0})\n" +
-		                   $"Current Room: {currentRoom}\n" +
+		_debugLabel.Text = $"═══ MazeWars Client v0.2.0-alpha (Phase 2) ═══\n" +
+		                   $"🎮 Player: {_networkManager.PlayerId}\n" +
+		                   $"📍 Position: ({localPlayerPos.X:F0}, {localPlayerPos.Y:F0})\n" +
+		                   $"🏠 Room: {currentRoom}\n" +
 		                   $"\n" +
-		                   $"═══ Network Status ═══\n" +
-		                   $"SignalR: {(_networkManager.IsConnected ? "✓ Connected" : "✗ Disconnected")}\n" +
+		                   $"═══ Network ═══\n" +
+		                   $"SignalR: {(_networkManager.IsConnected ? "✓" : "✗")}\n" +
 		                   $"{_udpClient.GetDebugInfo()}\n" +
 		                   $"{_inputSender.GetDebugInfo()}\n" +
 		                   $"{_messageHandler.GetDebugInfo()}\n" +
+		                   $"\n" +
+		                   $"═══ Prediction ═══\n" +
 		                   $"{_gameStateManager.GetDebugInfo()}\n" +
 		                   $"\n" +
 		                   $"═══ Controls ═══\n" +

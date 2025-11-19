@@ -8,10 +8,13 @@ namespace MazeWars.Client.Scripts.Game;
 
 /// <summary>
 /// Manages game state synchronization - spawning, updating, and removing players
+/// Implements client-side prediction and server reconciliation
 /// </summary>
 public partial class GameStateManager : Node
 {
 	[Export] public PackedScene PlayerScene { get; set; }
+	[Export] public bool EnablePrediction { get; set; } = true;
+	[Export] public bool EnableReconciliation { get; set; } = true;
 
 	private Dictionary<string, Player> _players = new Dictionary<string, Player>();
 	private Node2D _playersContainer;
@@ -25,13 +28,14 @@ public partial class GameStateManager : Node
 	// Statistics
 	private int _updatesReceived = 0;
 	private DateTime _lastUpdateTime;
+	private int _reconciliationsPerformed = 0;
 
 	public Player LocalPlayer => _localPlayer;
 	public int PlayerCount => _players.Count;
 
 	public override void _Ready()
 	{
-		GD.Print("[GameStateManager] Initializing...");
+		GD.Print("[GameStateManager] Initializing with Client-Side Prediction...");
 
 		// Get network components
 		_messageHandler = GetNode<MessageHandler>("/root/MessageHandler");
@@ -43,6 +47,7 @@ public partial class GameStateManager : Node
 
 		_localPlayerId = _networkManager.PlayerId;
 		GD.Print($"[GameStateManager] Local player ID: {_localPlayerId}");
+		GD.Print($"[GameStateManager] Prediction: {EnablePrediction}, Reconciliation: {EnableReconciliation}");
 	}
 
 	public void SetPlayersContainer(Node2D container)
@@ -127,9 +132,8 @@ public partial class GameStateManager : Node
 	{
 		if (player.IsLocalPlayer)
 		{
-			// Local player: use for reconciliation
-			// For now, we'll just update health
-			player.UpdateHealth(state.CurrentHealth, state.MaxHealth);
+			// Local player: perform reconciliation
+			ReconcileLocalPlayer(player, state);
 		}
 		else
 		{
@@ -140,6 +144,66 @@ public partial class GameStateManager : Node
 				state.CurrentHealth,
 				state.MaxHealth
 			);
+		}
+	}
+
+	/// <summary>
+	/// Performs client-side prediction reconciliation with server state
+	/// </summary>
+	private void ReconcileLocalPlayer(Player player, PlayerStateUpdate serverState)
+	{
+		// Always update health (non-predicted state)
+		player.UpdateHealth(serverState.CurrentHealth, serverState.MaxHealth);
+
+		if (!EnableReconciliation)
+		{
+			// No reconciliation: just snap to server position
+			player.SetPosition(new Godot.Vector2(serverState.Position.X, serverState.Position.Y));
+			return;
+		}
+
+		var serverPosition = new Godot.Vector2(serverState.Position.X, serverState.Position.Y);
+
+		// Perform reconciliation
+		bool mispredicted = player.ReconcileWithServer(serverPosition);
+
+		if (mispredicted)
+		{
+			_reconciliationsPerformed++;
+
+			// Replay unacknowledged inputs
+			if (EnablePrediction)
+			{
+				ReplayPendingInputs(player);
+			}
+		}
+	}
+
+	/// <summary>
+	/// Replays all pending (unacknowledged) inputs to maintain prediction accuracy
+	/// </summary>
+	private void ReplayPendingInputs(Player player)
+	{
+		if (_inputSender == null)
+			return;
+
+		var pendingInputs = _inputSender.GetPendingInputs();
+
+		if (pendingInputs.Count > 0)
+		{
+			GD.Print($"[GameStateManager] Replaying {pendingInputs.Count} pending inputs...");
+
+			foreach (var predictedInput in pendingInputs)
+			{
+				// Re-apply the input
+				player.ReplayInput(
+					predictedInput.Input.MoveInput,
+					predictedInput.Input.IsSprinting,
+					predictedInput.DeltaTime
+				);
+			}
+
+			GD.Print($"[GameStateManager] Replay complete. New position: {player.Position}");
 		}
 	}
 
@@ -174,12 +238,18 @@ public partial class GameStateManager : Node
 
 	public override void _Process(double delta)
 	{
-		// Apply local player movement from input
-		if (_localPlayer != null && _inputSender != null)
+		// Apply local player movement with prediction
+		if (_localPlayer != null && _inputSender != null && EnablePrediction)
 		{
 			var moveInput = ReadMovementInput();
 			var isSprinting = Input.IsActionPressed("sprint");
 			_localPlayer.ApplyLocalMovement(moveInput, isSprinting, (float)delta);
+
+			// Update input sender with predicted position
+			_inputSender.UpdateLastPredictedPosition(
+				_localPlayer.GetPredictedPosition(),
+				_localPlayer.GetPredictedVelocity()
+			);
 		}
 	}
 
@@ -208,7 +278,29 @@ public partial class GameStateManager : Node
 			return "GameState: No updates";
 
 		var timeSinceLast = (DateTime.UtcNow - _lastUpdateTime).TotalSeconds;
-		return $"GameState: {_players.Count} players | {_updatesReceived} updates | Last: {timeSinceLast:F1}s ago";
+		var predictionInfo = _localPlayer != null ? _localPlayer.GetPredictionDebugInfo() : "";
+
+		return $"GameState: {_players.Count} players | {_updatesReceived} updates | Last: {timeSinceLast:F1}s ago\n{predictionInfo}";
+	}
+
+	public string GetDetailedDebugInfo()
+	{
+		var sb = new System.Text.StringBuilder();
+		sb.AppendLine("Game State Manager:");
+		sb.AppendLine($"  Players: {_players.Count}");
+		sb.AppendLine($"  Updates Received: {_updatesReceived}");
+		sb.AppendLine($"  Reconciliations: {_reconciliationsPerformed}");
+		sb.AppendLine($"  Prediction Enabled: {EnablePrediction}");
+		sb.AppendLine($"  Reconciliation Enabled: {EnableReconciliation}");
+
+		if (_localPlayer != null)
+		{
+			sb.AppendLine($"\nLocal Player:");
+			sb.AppendLine($"  Position: {_localPlayer.Position}");
+			sb.AppendLine($"  {_localPlayer.GetPredictionDebugInfo()}");
+		}
+
+		return sb.ToString();
 	}
 
 	public override void _ExitTree()

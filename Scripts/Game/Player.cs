@@ -6,11 +6,13 @@ namespace MazeWars.Client.Scripts.Game;
 
 /// <summary>
 /// Represents a player in the game world
+/// Supports client-side prediction and server reconciliation
 /// </summary>
 public partial class Player : CharacterBody2D
 {
 	[Export] public float MoveSpeed { get; set; } = 300f;
 	[Export] public float SprintMultiplier { get; set; } = 1.5f;
+	[Export] public float ReconciliationThreshold { get; set} = 2.0f; // Units of error before correction
 
 	// Player data
 	public string PlayerId { get; set; }
@@ -23,10 +25,19 @@ public partial class Player : CharacterBody2D
 	private Label _nameLabel;
 	private ProgressBar _healthBar;
 
-	// Server state (for remote players)
+	// Server state (for reconciliation and interpolation)
 	private Godot.Vector2 _serverPosition;
 	private Godot.Vector2 _serverVelocity;
 	private float _interpolationSpeed = 15f;
+
+	// Client prediction state
+	private Godot.Vector2 _predictedPosition;
+	private Godot.Vector2 _predictedVelocity;
+
+	// Reconciliation stats
+	private int _reconciliationsPerformed = 0;
+	private float _maxPredictionError = 0f;
+	private float _lastPredictionError = 0f;
 
 	// Health
 	private float _currentHealth = 100f;
@@ -82,6 +93,10 @@ public partial class Player : CharacterBody2D
 		CollisionLayer = 2; // Players layer
 		CollisionMask = 1 | 2; // World and Players
 
+		// Initialize prediction state
+		_predictedPosition = Position;
+		_predictedVelocity = Godot.Vector2.Zero;
+
 		GD.Print($"[Player] Created player {PlayerName} ({PlayerId}) - Class: {PlayerClass}, IsLocal: {IsLocalPlayer}");
 	}
 
@@ -103,8 +118,9 @@ public partial class Player : CharacterBody2D
 	{
 		if (IsLocalPlayer)
 		{
-			// Local player: use velocity set by input system
-			// Movement is handled by InputSender and applied here
+			// Local player: prediction is handled by GameStateManager
+			// This just updates visuals
+			UpdateVisuals(delta);
 		}
 		else
 		{
@@ -113,12 +129,98 @@ public partial class Player : CharacterBody2D
 		}
 	}
 
+	/// <summary>
+	/// Applies movement input with prediction (for local player)
+	/// </summary>
+	public void ApplyLocalMovement(Godot.Vector2 moveInput, bool isSprinting, float delta)
+	{
+		if (!IsLocalPlayer)
+			return;
+
+		var speed = MoveSpeed;
+		if (isSprinting)
+			speed *= SprintMultiplier;
+
+		Velocity = moveInput * speed;
+		_predictedVelocity = Velocity;
+
+		MoveAndSlide();
+
+		// Update predicted position
+		_predictedPosition = Position;
+	}
+
+	/// <summary>
+	/// Sets the server's authoritative position and velocity
+	/// Used for reconciliation
+	/// </summary>
 	public void SetServerPosition(Godot.Vector2 position, Godot.Vector2 velocity)
 	{
 		_serverPosition = position;
 		_serverVelocity = velocity;
 	}
 
+	/// <summary>
+	/// Reconciles predicted position with server position
+	/// Returns true if reconciliation was performed (misprediction detected)
+	/// </summary>
+	public bool ReconcileWithServer(Godot.Vector2 serverPosition)
+	{
+		if (!IsLocalPlayer)
+			return false;
+
+		// Calculate prediction error
+		var predictionError = (Position - serverPosition).Length();
+		_lastPredictionError = predictionError;
+
+		if (predictionError > _maxPredictionError)
+			_maxPredictionError = predictionError;
+
+		// Check if error exceeds threshold
+		if (predictionError > ReconciliationThreshold)
+		{
+			_reconciliationsPerformed++;
+
+			GD.Print($"[Player] Reconciliation! Error: {predictionError:F2} units. " +
+			         $"Client: {Position}, Server: {serverPosition}");
+
+			// Snap to server position
+			Position = serverPosition;
+			_predictedPosition = serverPosition;
+
+			// Visual feedback for reconciliation (optional)
+			_sprite.Modulate = new Color(1, 1, 0, 1); // Yellow flash
+
+			return true;
+		}
+
+		return false;
+	}
+
+	/// <summary>
+	/// Re-applies an input for reconciliation
+	/// Used to replay unacknowledged inputs after server correction
+	/// </summary>
+	public void ReplayInput(System.Numerics.Vector2 moveInput, bool isSprinting, float deltaTime)
+	{
+		if (!IsLocalPlayer)
+			return;
+
+		var godotInput = new Godot.Vector2(moveInput.X, moveInput.Y);
+
+		var speed = MoveSpeed;
+		if (isSprinting)
+			speed *= SprintMultiplier;
+
+		Velocity = godotInput * speed;
+		MoveAndSlide();
+
+		_predictedPosition = Position;
+	}
+
+	/// <summary>
+	/// Interpolates remote player to server position smoothly
+	/// </summary>
 	private void InterpolateToServerPosition(double delta)
 	{
 		// Smooth interpolation to server position
@@ -136,19 +238,12 @@ public partial class Player : CharacterBody2D
 		}
 	}
 
-	public void ApplyLocalMovement(Godot.Vector2 moveInput, bool isSprinting, float delta)
+	/// <summary>
+	/// Updates visual feedback based on current state
+	/// </summary>
+	private void UpdateVisuals(double delta)
 	{
-		if (!IsLocalPlayer)
-			return;
-
-		var speed = MoveSpeed;
-		if (isSprinting)
-			speed *= SprintMultiplier;
-
-		Velocity = moveInput * speed;
-		MoveAndSlide();
-
-		// Visual feedback
+		// Visual feedback for movement
 		if (Velocity.LengthSquared() > 0.01f)
 		{
 			_sprite.Scale = Godot.Vector2.One * 1.1f;
@@ -156,13 +251,19 @@ public partial class Player : CharacterBody2D
 			// Rotate towards movement direction
 			if (Velocity.X != 0)
 			{
-				_sprite.Rotation = Mathf.Lerp(_sprite.Rotation, Velocity.X > 0 ? 0.1f : -0.1f, 10f * delta);
+				_sprite.Rotation = Mathf.Lerp(_sprite.Rotation, Velocity.X > 0 ? 0.1f : -0.1f, 10f * (float)delta);
 			}
 		}
 		else
 		{
 			_sprite.Scale = Godot.Vector2.One;
-			_sprite.Rotation = Mathf.Lerp(_sprite.Rotation, 0, 10f * delta);
+			_sprite.Rotation = Mathf.Lerp(_sprite.Rotation, 0, 10f * (float)delta);
+		}
+
+		// Fade back yellow flash from reconciliation
+		if (_sprite.Modulate != Colors.White)
+		{
+			_sprite.Modulate = _sprite.Modulate.Lerp(Colors.White, 10f * (float)delta);
 		}
 	}
 
@@ -198,8 +299,29 @@ public partial class Player : CharacterBody2D
 		return Position;
 	}
 
+	public Godot.Vector2 GetPredictedPosition()
+	{
+		return _predictedPosition;
+	}
+
+	public Godot.Vector2 GetPredictedVelocity()
+	{
+		return _predictedVelocity;
+	}
+
 	public void SetPosition(Godot.Vector2 position)
 	{
 		Position = position;
+		_predictedPosition = position;
+	}
+
+	// Debug info
+	public string GetPredictionDebugInfo()
+	{
+		if (!IsLocalPlayer)
+			return "Remote player";
+
+		return $"Prediction Error: {_lastPredictionError:F2} (Max: {_maxPredictionError:F2}) | " +
+		       $"Reconciliations: {_reconciliationsPerformed}";
 	}
 }
