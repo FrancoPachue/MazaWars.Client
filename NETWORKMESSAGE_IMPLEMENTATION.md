@@ -128,7 +128,7 @@ Todos estos modelos ahora tienen `keyAsPropertyName: false`:
 - ✅ ClientConnectData
 - ✅ ConnectResponseData
 - ✅ PlayerStateUpdate
-- ✅ PlayerStatesBatch
+- ⚠️ ~~PlayerStatesBatch~~ (NO EXISTE EN EL SERVIDOR - Ver nota abajo)
 - ✅ WorldUpdateMessage
 - ✅ ChatReceivedData
 - ✅ CombatEvent
@@ -138,6 +138,16 @@ Todos estos modelos ahora tienen `keyAsPropertyName: false`:
 - ✅ PlayerInputMessage
 - ✅ UseItemMessage
 - ✅ ExtractionMessage
+
+### ⚠️ Importante: PlayerStatesBatch
+
+**PlayerStatesBatch NO existe en el servidor.** El servidor usa `WorldUpdateMessage` para enviar actualizaciones de jugadores con el tipo de mensaje `"player_states_batch"`.
+
+Cuando el cliente recibe mensajes con tipo `"player_states_batch"`, debe deserializar como `WorldUpdateMessage`, no como `PlayerStatesBatch`.
+
+La estructura de Keys es diferente:
+- `WorldUpdateMessage`: Keys 0-6 (AcknowledgedInputs, ServerTime, FrameNumber, Players, CombatEvents, LootUpdates, MobUpdates)
+- `PlayerStatesBatch`: Keys 0-2 (Players, ServerTime, FrameNumber) - estructura incorrecta
 
 ## Ejemplo Completo: Flujo de Mensajes
 

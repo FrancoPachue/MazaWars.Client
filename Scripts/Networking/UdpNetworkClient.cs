@@ -336,51 +336,19 @@ public partial class UdpNetworkClient : Node
 					case "player_states_batch":
 						try
 						{
-							// Try as PlayerStatesBatch first
-							try
+							// Server sends WorldUpdateMessage for player_states_batch
+							// (PlayerStatesBatch doesn't exist on server)
+							var update = MessagePackSerializer.Deserialize<WorldUpdateMessage>(dataBytes);
+							if (update != null && update.Players != null)
 							{
-								var batch = MessagePackSerializer.Deserialize<PlayerStatesBatch>(dataBytes);
-								if (batch != null && batch.Players != null)
-								{
-									var update = new WorldUpdateMessage
-									{
-										Players = batch.Players,
-										ServerTime = batch.ServerTime,
-										FrameNumber = batch.FrameNumber,
-										AcknowledgedInputs = new(),
-										CombatEvents = new(),
-										LootUpdates = new(),
-										MobUpdates = new()
-									};
-									_updateQueue.Enqueue(update);
-									return;
-								}
+								_updateQueue.Enqueue(update);
+								return;
 							}
-							catch
-							{
-								// Try as simple list
-								var playersList = MessagePackSerializer.Deserialize<List<PlayerStateUpdate>>(dataBytes);
-								if (playersList != null && playersList.Count > 0)
-								{
-									var update = new WorldUpdateMessage
-									{
-										Players = playersList,
-										ServerTime = 0,
-										FrameNumber = 0,
-										AcknowledgedInputs = new(),
-										CombatEvents = new(),
-										LootUpdates = new(),
-										MobUpdates = new()
-									};
-									_updateQueue.Enqueue(update);
-									return;
-								}
-							}
-							GD.PrintErr($"[UdpClient] Failed to deserialize player_states_batch data");
+							GD.PrintErr($"[UdpClient] Failed to deserialize player_states_batch as WorldUpdateMessage");
 						}
 						catch (Exception ex)
 						{
-							GD.PrintErr($"[UdpClient] Failed to deserialize PlayerStatesBatch: {ex.Message}");
+							GD.PrintErr($"[UdpClient] Failed to deserialize player_states_batch as WorldUpdateMessage: {ex.Message}");
 						}
 						break;
 
