@@ -151,9 +151,6 @@ public partial class InputSender : Node
 			AckSequenceNumber = _lastServerUpdate,
 			ClientTimestamp = clientTime,
 
-			// Player ID
-			PlayerId = _playerId,
-
 			// Input data
 			MoveInput = systemMoveInput,
 			IsSprinting = isSprinting,
