@@ -43,7 +43,7 @@ public partial class MessageHandler : Node
 		GD.Print("[MessageHandler] Initialized and subscribed to network events");
 	}
 
-	private void OnSignalRMessage(string messageType, Variant data)
+	private void OnSignalRMessage(string messageType, object data)
 	{
 		_messagesProcessed++;
 		_lastMessageTime = DateTime.UtcNow;
@@ -98,11 +98,11 @@ public partial class MessageHandler : Node
 		GameStateUpdate?.Invoke(update);
 	}
 
-	private void HandleWorldUpdate(Variant data)
+	private void HandleWorldUpdate(object data)
 	{
 		try
 		{
-			var update = data.As<WorldUpdateMessage>();
+			var update = data as WorldUpdateMessage;
 			if (update != null)
 			{
 				GameStateUpdate?.Invoke(update);
@@ -114,11 +114,11 @@ public partial class MessageHandler : Node
 		}
 	}
 
-	private void HandleChatMessage(Variant data)
+	private void HandleChatMessage(object data)
 	{
 		try
 		{
-			var chatData = data.As<ChatReceivedData>();
+			var chatData = data as ChatReceivedData;
 			if (chatData != null)
 			{
 				GD.Print($"[MessageHandler] Chat from {chatData.PlayerName} [{chatData.ChatType}]: {chatData.Message}");
@@ -131,11 +131,11 @@ public partial class MessageHandler : Node
 		}
 	}
 
-	private void HandlePlayerJoined(Variant data)
+	private void HandlePlayerJoined(object data)
 	{
 		try
 		{
-			var playerData = data.AsString();
+			var playerData = data as string;
 			if (!string.IsNullOrEmpty(playerData))
 			{
 				GD.Print($"[MessageHandler] Player joined: {playerData}");
@@ -148,11 +148,11 @@ public partial class MessageHandler : Node
 		}
 	}
 
-	private void HandlePlayerLeft(Variant data)
+	private void HandlePlayerLeft(object data)
 	{
 		try
 		{
-			var playerId = data.AsString();
+			var playerId = data as string;
 			if (!string.IsNullOrEmpty(playerId))
 			{
 				GD.Print($"[MessageHandler] Player left: {playerId}");
@@ -165,11 +165,11 @@ public partial class MessageHandler : Node
 		}
 	}
 
-	private void HandleInventoryUpdate(Variant data)
+	private void HandleInventoryUpdate(object data)
 	{
 		try
 		{
-			var inventory = data.As<InventoryUpdate>();
+			var inventory = data as InventoryUpdate;
 			if (inventory != null)
 			{
 				GD.Print($"[MessageHandler] Inventory updated for {inventory.PlayerId}");
@@ -182,11 +182,11 @@ public partial class MessageHandler : Node
 		}
 	}
 
-	private void HandleCombatEvent(Variant data)
+	private void HandleCombatEvent(object data)
 	{
 		try
 		{
-			var combatEvent = data.As<CombatEvent>();
+			var combatEvent = data as CombatEvent;
 			if (combatEvent != null)
 			{
 				GD.Print($"[MessageHandler] Combat event: {combatEvent.EventType}");
