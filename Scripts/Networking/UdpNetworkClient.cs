@@ -347,7 +347,17 @@ public partial class UdpNetworkClient : Node
 							var batch = MessagePackSerializer.Deserialize<PlayerStatesBatchData>(dataBytes);
 							if (batch != null && batch.Players != null && batch.Players.Count > 0)
 							{
-								GD.Print($"[UdpClient] Received player_states_batch: {batch.Players.Count} players (batch {batch.BatchIndex + 1}/{batch.TotalBatches})");
+								// DEBUG: Check if acknowledgments are being received
+								var ackCount = batch.AcknowledgedInputs?.Count ?? 0;
+								if (ackCount > 0)
+								{
+									var ackStr = string.Join(", ", batch.AcknowledgedInputs.Select(kvp => $"{kvp.Key.Substring(0, 8)}={kvp.Value}"));
+									GD.Print($"[UdpClient] Received player_states_batch: {batch.Players.Count} players (batch {batch.BatchIndex + 1}/{batch.TotalBatches}) - ACKS: {ackStr}");
+								}
+								else
+								{
+									GD.Print($"[UdpClient] Received player_states_batch: {batch.Players.Count} players (batch {batch.BatchIndex + 1}/{batch.TotalBatches}) - NO ACKS!");
+								}
 
 								// Convert PlayerUpdateData to PlayerStateUpdate for WorldUpdateMessage
 								var players = batch.Players.Select(p => new PlayerStateUpdate
