@@ -309,6 +309,7 @@ public partial class UdpNetworkClient : Node
 
 							case "world_update":
 							case "worldupdate":
+							case "player_states_batch":
 								try
 								{
 									var updateBytes = MessagePackSerializer.Serialize(networkMessage.Data);
