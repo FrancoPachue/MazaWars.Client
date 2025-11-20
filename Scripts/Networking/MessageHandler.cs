@@ -17,7 +17,7 @@ public partial class MessageHandler : Node
 	public event Action<InventoryUpdate>? InventoryUpdated;
 	public event Action<CombatEvent>? CombatEventOccurred;
 
-	private NetworkManager _networkManager;
+	private NetworkManager? _networkManager; // Optional - for SignalR (deprecated)
 	private UdpNetworkClient _udpClient;
 
 	// Statistics
@@ -29,18 +29,24 @@ public partial class MessageHandler : Node
 		GD.Print("[MessageHandler] Initializing...");
 	}
 
-	public void Initialize(NetworkManager networkManager, UdpNetworkClient udpClient)
+	public void Initialize(NetworkManager? networkManager, UdpNetworkClient udpClient)
 	{
 		_networkManager = networkManager;
 		_udpClient = udpClient;
 
-		// Subscribe to SignalR messages
-		_networkManager.MessageReceived += OnSignalRMessage;
+		// Subscribe to SignalR messages (deprecated - only for backwards compatibility)
+		if (_networkManager != null)
+		{
+			_networkManager.MessageReceived += OnSignalRMessage;
+			GD.Print("[MessageHandler] Subscribed to SignalR messages (deprecated)");
+		}
 
-		// Subscribe to UDP messages
+		// Subscribe to UDP messages (primary communication method)
 		_udpClient.WorldUpdateReceived += OnWorldUpdate;
+		_udpClient.ChatMessageReceived += OnChatMessage;
+		_udpClient.CombatEventReceived += OnCombatEvent;
 
-		GD.Print("[MessageHandler] Initialized and subscribed to network events");
+		GD.Print("[MessageHandler] Initialized and subscribed to UDP events");
 	}
 
 	private void OnSignalRMessage(string messageType, object data)
@@ -97,6 +103,26 @@ public partial class MessageHandler : Node
 		// Invoke C# event for game state manager
 		GameStateUpdate?.Invoke(update);
 	}
+
+	private void OnChatMessage(ChatReceivedData chatData)
+	{
+		_messagesProcessed++;
+		_lastMessageTime = DateTime.UtcNow;
+
+		GD.Print($"[MessageHandler] Chat from {chatData.PlayerName} [{chatData.ChatType}]: {chatData.Message}");
+		ChatMessageReceived?.Invoke(chatData);
+	}
+
+	private void OnCombatEvent(CombatEvent combatEvent)
+	{
+		_messagesProcessed++;
+		_lastMessageTime = DateTime.UtcNow;
+
+		GD.Print($"[MessageHandler] Combat event: {combatEvent.EventType}");
+		CombatEventOccurred?.Invoke(combatEvent);
+	}
+
+	// ===== DEPRECATED SignalR Handlers (kept for backwards compatibility) =====
 
 	private void HandleWorldUpdate(object data)
 	{

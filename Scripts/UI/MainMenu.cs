@@ -2,6 +2,7 @@ using Godot;
 using System;
 using System.Threading.Tasks;
 using MazeWars.Client.Scripts.Networking;
+using MazeWars.Client.Shared.NetworkModels;
 
 namespace MazeWars.Client.Scripts.UI;
 
@@ -19,12 +20,13 @@ public partial class MainMenu : Control
 	private Panel _loadingPanel;
 
 	// Network references (autoload singletons)
-	private NetworkManager _networkManager;
 	private UdpNetworkClient _udpClient;
 	private MessageHandler _messageHandler;
 	private InputSender _inputSender;
 
 	private bool _isConnecting = false;
+	private string _pendingPlayerName = string.Empty;
+	private string _pendingPlayerClass = string.Empty;
 
 	public override void _Ready()
 	{
@@ -48,27 +50,25 @@ public partial class MainMenu : Control
 
 		// Set defaults
 		_playerNameInput.Text = $"Player{GD.Randi() % 1000}";
-		_serverUrlInput.Text = "http://localhost:5000";
+		_serverUrlInput.Text = "127.0.0.1:5001"; // UDP server address
 		_loadingPanel.Visible = false;
 
 		// Connect button signal
 		_connectButton.Pressed += OnConnectPressed;
 
 		// Get autoload singletons (will be created in project.godot)
-		_networkManager = GetNode<NetworkManager>("/root/NetworkManager");
 		_udpClient = GetNode<UdpNetworkClient>("/root/UdpClient");
 		_messageHandler = GetNode<MessageHandler>("/root/MessageHandler");
 		_inputSender = GetNode<InputSender>("/root/InputSender");
 
-		// Subscribe to connection events
-		_networkManager.Connected += OnConnected;
-		_networkManager.Disconnected += OnDisconnected;
-		_networkManager.ConnectionError += OnConnectionError;
+		// Subscribe to UDP connection events
+		_udpClient.ConnectionResponse += OnConnectionResponse;
+		_udpClient.ConnectionError += OnConnectionError;
 
 		UpdateStatus("Ready to connect");
 	}
 
-	private async void OnConnectPressed()
+	private void OnConnectPressed()
 	{
 		if (_isConnecting)
 			return;
@@ -86,55 +86,38 @@ public partial class MainMenu : Control
 
 		if (string.IsNullOrEmpty(serverUrl))
 		{
-			UpdateStatus("Please enter a server URL", true);
+			UpdateStatus("Please enter a server address", true);
 			return;
 		}
+
+		// Parse server address (format: "host:port" or just "host")
+		var parts = serverUrl.Split(':');
+		var serverAddress = parts[0];
+		var serverPort = parts.Length > 1 && int.TryParse(parts[1], out var port) ? port : 5001;
 
 		_isConnecting = true;
 		_connectButton.Disabled = true;
 		_loadingPanel.Visible = true;
-		UpdateStatus("Connecting to server...");
+		_pendingPlayerName = playerName;
+		_pendingPlayerClass = playerClass;
+
+		UpdateStatus($"Connecting to {serverAddress}:{serverPort}...");
 
 		try
 		{
-			// Configure server URL
-			_networkManager.ServerUrl = serverUrl;
+			// Configure UDP client
+			_udpClient.ServerAddress = serverAddress;
+			_udpClient.ServerPort = serverPort;
 
-			// Extract UDP address from HTTP URL
-			var uri = new Uri(serverUrl);
-			_udpClient.ServerAddress = uri.Host;
-			_udpClient.ServerPort = 5001; // Default UDP port
+			// Connect via UDP (sends ClientConnectData automatically)
+			_udpClient.ConnectToServer(playerName, playerClass);
 
-			// Connect to SignalR
-			var connected = await _networkManager.ConnectAsync(playerName, playerClass);
-
-			if (connected)
-			{
-				// SignalR connected, now connect UDP
-				_udpClient.Connect();
-
-				// Initialize message handler
-				_messageHandler.Initialize(_networkManager, _udpClient);
-
-				// Initialize input sender
-				_inputSender.Initialize(_udpClient, _networkManager.PlayerId);
-
-				UpdateStatus("Connected! Loading game...");
-
-				// Wait a moment then load game scene
-				await Task.Delay(1000);
-				LoadGameScene();
-			}
-			else
-			{
-				UpdateStatus("Failed to connect to server", true);
-				_isConnecting = false;
-				_connectButton.Disabled = false;
-				_loadingPanel.Visible = false;
-			}
+			GD.Print($"[MainMenu] Connection request sent for {playerName} ({playerClass})");
 		}
 		catch (Exception ex)
 		{
+			GD.PrintErr($"[MainMenu] Failed to connect to server");
+			GD.PrintErr($"[MainMenu] Error: {ex.Message}");
 			UpdateStatus($"Connection error: {ex.Message}", true);
 			_isConnecting = false;
 			_connectButton.Disabled = false;
@@ -142,19 +125,34 @@ public partial class MainMenu : Control
 		}
 	}
 
-	private void OnConnected()
+	private async void OnConnectionResponse(ConnectResponseData response)
 	{
-		CallDeferred(nameof(UpdateStatus), "Connected successfully!");
-	}
+		if (response.Success)
+		{
+			GD.Print($"[MainMenu] Connection successful! Player ID: {response.PlayerId}");
+			UpdateStatus("Connected! Loading game...");
 
-	private void OnDisconnected()
-	{
-		CallDeferred(nameof(UpdateStatus), "Disconnected from server", true);
-		CallDeferred(nameof(EnableConnectButton));
+			// Initialize message handler (without NetworkManager)
+			_messageHandler.Initialize(null, _udpClient);
+
+			// Initialize input sender with UDP client and player ID
+			_inputSender.Initialize(_udpClient, response.PlayerId);
+
+			// Wait a moment then load game scene
+			await Task.Delay(1000);
+			LoadGameScene();
+		}
+		else
+		{
+			GD.PrintErr($"[MainMenu] Connection rejected: {response.ErrorMessage}");
+			UpdateStatus($"Connection failed: {response.ErrorMessage}", true);
+			EnableConnectButton();
+		}
 	}
 
 	private void OnConnectionError(string error)
 	{
+		GD.PrintErr($"[MainMenu] Connection error: {error}");
 		CallDeferred(nameof(UpdateStatus), $"Error: {error}", true);
 		CallDeferred(nameof(EnableConnectButton));
 	}
@@ -182,11 +180,10 @@ public partial class MainMenu : Control
 	public override void _ExitTree()
 	{
 		// Cleanup subscriptions
-		if (_networkManager != null)
+		if (_udpClient != null)
 		{
-			_networkManager.Connected -= OnConnected;
-			_networkManager.Disconnected -= OnDisconnected;
-			_networkManager.ConnectionError -= OnConnectionError;
+			_udpClient.ConnectionResponse -= OnConnectionResponse;
+			_udpClient.ConnectionError -= OnConnectionError;
 		}
 	}
 }
