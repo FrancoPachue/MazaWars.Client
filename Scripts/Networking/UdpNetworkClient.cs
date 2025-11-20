@@ -313,30 +313,6 @@ public partial class UdpNetworkClient : Node
 						}
 						break;
 
-					case "connect_response":
-					case "connectresponse":
-						try
-						{
-							var response = MessagePackSerializer.Deserialize<ConnectResponseData>(dataBytes);
-							if (response != null)
-							{
-								if (response.Success)
-								{
-									_isAuthenticated = true;
-									PlayerId = response.PlayerId;
-									SessionToken = response.SessionToken;
-									GD.Print($"[UdpClient] Authenticated as {PlayerId}");
-								}
-								_connectionQueue.Enqueue(response);
-							}
-							return;
-						}
-						catch (Exception ex)
-						{
-							GD.PrintErr($"[UdpClient] Failed to deserialize ConnectResponse: {ex.Message}");
-						}
-						break;
-
 					case "world_update":
 					case "worldupdate":
 						try
@@ -361,6 +337,8 @@ public partial class UdpNetworkClient : Node
 							var batch = MessagePackSerializer.Deserialize<PlayerStatesBatchData>(dataBytes);
 							if (batch != null && batch.Players != null && batch.Players.Count > 0)
 							{
+								GD.Print($"[UdpClient] Received player_states_batch: {batch.Players.Count} players (batch {batch.BatchIndex + 1}/{batch.TotalBatches})");
+
 								// Convert PlayerUpdateData to PlayerStateUpdate for WorldUpdateMessage
 								var players = batch.Players.Select(p => new PlayerStateUpdate
 								{
@@ -428,6 +406,23 @@ public partial class UdpNetworkClient : Node
 						catch (Exception ex)
 						{
 							GD.PrintErr($"[UdpClient] Failed to deserialize CombatEvent: {ex.Message}");
+						}
+						break;
+
+					case "lobby_update":
+						try
+						{
+							var lobbyUpdate = MessagePackSerializer.Deserialize<LobbyUpdateData>(dataBytes);
+							if (lobbyUpdate != null)
+							{
+								GD.Print($"[UdpClient] Lobby update: {lobbyUpdate.CurrentPlayers}/{lobbyUpdate.MaxPlayers} players, Status: {lobbyUpdate.Status}");
+								// TODO: Emit signal or event for lobby UI to update
+							}
+							return;
+						}
+						catch (Exception ex)
+						{
+							GD.PrintErr($"[UdpClient] Failed to deserialize lobby_update: {ex.Message}");
 						}
 						break;
 
