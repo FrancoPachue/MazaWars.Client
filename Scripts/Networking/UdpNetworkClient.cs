@@ -16,7 +16,7 @@ namespace MazeWars.Client.Scripts.Networking;
 public partial class UdpNetworkClient : Node
 {
 	[Export] public string ServerAddress { get; set; } = "127.0.0.1";
-	[Export] public int ServerPort { get; set; } = 5001;
+	[Export] public int ServerPort { get; set; } = 7001; // Must match server's UdpPort in appsettings.json
 
 	[Signal] public delegate void UdpMessageReceivedEventHandler(byte[] data);
 	[Signal] public delegate void ConnectionErrorEventHandler(string error);
@@ -86,7 +86,7 @@ public partial class UdpNetworkClient : Node
 
 			GD.Print($"[UdpClient] Connected to {ServerAddress}:{ServerPort}");
 
-			// Send connection request
+			// Send connection request using MessagePack (consistent with all other messages)
 			var connectData = new ClientConnectData
 			{
 				PlayerName = playerName,
@@ -103,8 +103,12 @@ public partial class UdpNetworkClient : Node
 				Timestamp = DateTime.UtcNow
 			};
 
-			SendMessage(message);
-			GD.Print($"[UdpClient] Sent connection request for player '{playerName}' ({playerClass})");
+			// Serialize as MessagePack (consistent serialization format)
+			var bytes = MessagePackSerializer.Serialize(message);
+			_udpClient.Send(bytes, bytes.Length);
+			_packetsSent++;
+
+			GD.Print($"[UdpClient] Sent connection request for player '{playerName}' ({playerClass}) using MessagePack");
 		}
 		catch (Exception ex)
 		{
