@@ -423,6 +423,23 @@ public partial class UdpNetworkClient : Node
 						}
 						break;
 
+					case "error":
+						try
+						{
+							var errorData = MessagePackSerializer.Deserialize<ErrorData>(dataBytes);
+							if (errorData != null && !string.IsNullOrEmpty(errorData.Message))
+							{
+								GD.PrintErr($"[UdpClient] Server error: {errorData.Message}");
+								// TODO: Emit signal for UI to show error notification
+							}
+							return;
+						}
+						catch (Exception ex)
+						{
+							GD.PrintErr($"[UdpClient] Failed to deserialize error message: {ex.Message}");
+						}
+						break;
+
 					default:
 						GD.PrintErr($"[UdpClient] Unknown wrapped message type: {messageType} ({data.Length} bytes)");
 						return;
