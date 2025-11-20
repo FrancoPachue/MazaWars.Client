@@ -46,14 +46,27 @@ _udpClient.Send(bytes, bytes.Length);
 ### 2. Cliente RECIBE mensaje del servidor:
 
 ```csharp
-// Deserializar NetworkMessage
-var networkMessage = MessagePackSerializer.Deserialize<NetworkMessage>(data);
+// Usar MessagePackReader para extraer el campo Data manualmente
+var sequence = new ReadOnlySequence<byte>(data);
+var reader = new MessagePackReader(sequence);
 
-// MessagePack deserializó Data como object (tipo dinámico)
-// Re-serializar y deserializar al tipo correcto
-var dataBytes = MessagePackSerializer.Serialize(networkMessage.Data);
+// Leer NetworkMessage manualmente
+var arrayLength = reader.ReadArrayHeader(); // 4 campos
+var messageType = reader.ReadString();      // Type (Key 0)
+var playerId = reader.ReadString();         // PlayerId (Key 1)
 
-switch (networkMessage.Type.ToLowerInvariant())
+// Extraer Data (Key 2) como bytes crudos sin deserializar
+var dataStartPos = reader.Consumed;
+reader.Skip(); // Saltar el campo Data para encontrar su fin
+var dataEndPos = reader.Consumed;
+
+// Extraer los bytes del campo Data
+var dataLength = (int)(dataEndPos - dataStartPos);
+var dataBytes = new byte[dataLength];
+Array.Copy(data, (int)dataStartPos, dataBytes, 0, dataLength);
+
+// Ahora deserializar dataBytes al tipo correcto
+switch (messageType.ToLowerInvariant())
 {
     case "player_states_batch":
         var batch = MessagePackSerializer.Deserialize<PlayerStatesBatch>(dataBytes);
@@ -66,6 +79,8 @@ switch (networkMessage.Type.ToLowerInvariant())
         break;
 }
 ```
+
+**⚠️ Por qué extraer manualmente:** Cuando MessagePack deserializa `NetworkMessage` con `object Data`, convierte el campo Data a un tipo interno que NO se puede re-serializar correctamente. Extrayendo los bytes crudos directamente, evitamos este problema.
 
 ## Por Qué `keyAsPropertyName: false` es Crucial
 
