@@ -9,12 +9,13 @@ namespace MazeWars.Client.Scripts.Networking;
 /// </summary>
 public partial class MessageHandler : Node
 {
-	[Signal] public delegate void GameStateUpdateEventHandler(WorldUpdateMessage update);
-	[Signal] public delegate void ChatMessageReceivedEventHandler(ChatReceivedData chatData);
-	[Signal] public delegate void PlayerJoinedEventHandler(string playerId, string playerName);
-	[Signal] public delegate void PlayerLeftEventHandler(string playerId);
-	[Signal] public delegate void InventoryUpdatedEventHandler(InventoryUpdate inventory);
-	[Signal] public delegate void CombatEventEventHandler(CombatEvent combatEvent);
+	// C# Events for complex types (Godot signals don't support custom classes)
+	public event Action<WorldUpdateMessage>? GameStateUpdate;
+	public event Action<ChatReceivedData>? ChatMessageReceived;
+	public event Action<string, string>? PlayerJoined;
+	public event Action<string>? PlayerLeft;
+	public event Action<InventoryUpdate>? InventoryUpdated;
+	public event Action<CombatEvent>? CombatEventOccurred;
 
 	private NetworkManager _networkManager;
 	private UdpNetworkClient _udpClient;
@@ -93,8 +94,8 @@ public partial class MessageHandler : Node
 		_messagesProcessed++;
 		_lastMessageTime = DateTime.UtcNow;
 
-		// Emit signal for game state manager
-		EmitSignal(SignalName.GameStateUpdate, update);
+		// Invoke C# event for game state manager
+		GameStateUpdate?.Invoke(update);
 	}
 
 	private void HandleWorldUpdate(Variant data)
@@ -104,7 +105,7 @@ public partial class MessageHandler : Node
 			var update = data.As<WorldUpdateMessage>();
 			if (update != null)
 			{
-				EmitSignal(SignalName.GameStateUpdate, update);
+				GameStateUpdate?.Invoke(update);
 			}
 		}
 		catch (Exception ex)
@@ -120,8 +121,8 @@ public partial class MessageHandler : Node
 			var chatData = data.As<ChatReceivedData>();
 			if (chatData != null)
 			{
-				GD.Print($"[MessageHandler] Chat from {chatData.SenderName} [{chatData.Channel}]: {chatData.Message}");
-				EmitSignal(SignalName.ChatMessageReceived, chatData);
+				GD.Print($"[MessageHandler] Chat from {chatData.PlayerName} [{chatData.ChatType}]: {chatData.Message}");
+				ChatMessageReceived?.Invoke(chatData);
 			}
 		}
 		catch (Exception ex)
@@ -138,7 +139,7 @@ public partial class MessageHandler : Node
 			if (!string.IsNullOrEmpty(playerData))
 			{
 				GD.Print($"[MessageHandler] Player joined: {playerData}");
-				EmitSignal(SignalName.PlayerJoined, playerData, "Unknown");
+				PlayerJoined?.Invoke(playerData, "Unknown");
 			}
 		}
 		catch (Exception ex)
@@ -155,7 +156,7 @@ public partial class MessageHandler : Node
 			if (!string.IsNullOrEmpty(playerId))
 			{
 				GD.Print($"[MessageHandler] Player left: {playerId}");
-				EmitSignal(SignalName.PlayerLeft, playerId);
+				PlayerLeft?.Invoke(playerId);
 			}
 		}
 		catch (Exception ex)
@@ -172,7 +173,7 @@ public partial class MessageHandler : Node
 			if (inventory != null)
 			{
 				GD.Print($"[MessageHandler] Inventory updated for {inventory.PlayerId}");
-				EmitSignal(SignalName.InventoryUpdated, inventory);
+				InventoryUpdated?.Invoke(inventory);
 			}
 		}
 		catch (Exception ex)
@@ -189,7 +190,7 @@ public partial class MessageHandler : Node
 			if (combatEvent != null)
 			{
 				GD.Print($"[MessageHandler] Combat event: {combatEvent.EventType}");
-				EmitSignal(SignalName.CombatEvent, combatEvent);
+				CombatEventOccurred?.Invoke(combatEvent);
 			}
 		}
 		catch (Exception ex)
