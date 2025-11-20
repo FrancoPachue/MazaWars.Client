@@ -97,15 +97,18 @@ public partial class UdpNetworkClient : Node
 				AuthToken = string.Empty // No auth for now
 			};
 
+			// Pre-serialize the connect data to bytes
+			var connectDataBytes = MessagePackSerializer.Serialize(connectData);
+
 			// Wrap in NetworkMessage
 			var message = new NetworkMessage
 			{
 				Type = "connect",
-				Data = connectData,
+				Data = connectDataBytes,  // Pre-serialized bytes
 				Timestamp = DateTime.UtcNow
 			};
 
-			// Serialize as MessagePack (consistent serialization format)
+			// Serialize the NetworkMessage
 			var bytes = MessagePackSerializer.Serialize(message);
 			_udpClient.Send(bytes, bytes.Length);
 			_packetsSent++;
