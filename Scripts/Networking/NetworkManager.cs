@@ -110,8 +110,7 @@ public partial class NetworkManager : Node
 			var connectData = new ClientConnectData
 			{
 				PlayerName = playerName,
-				PlayerClass = playerClass,
-				ClientVersion = "0.1.0"
+				PlayerClass = playerClass
 			};
 
 			var response = await _hubConnection.InvokeAsync<ConnectResponseData>("Connect", connectData);
@@ -125,8 +124,8 @@ public partial class NetworkManager : Node
 			}
 			else
 			{
-				GD.PrintErr($"[NetworkManager] Connection rejected: {response.Message}");
-				CallDeferred(MethodName.EmitSignal, SignalName.ConnectionError, response.Message);
+				GD.PrintErr($"[NetworkManager] Connection rejected: {response.ErrorMessage}");
+				CallDeferred(MethodName.EmitSignal, SignalName.ConnectionError, response.ErrorMessage);
 				await _hubConnection.StopAsync();
 				return false;
 			}
@@ -185,7 +184,7 @@ public partial class NetworkManager : Node
 
 	private void OnChatMessage(ChatReceivedData chatData)
 	{
-		GD.Print($"[NetworkManager] Chat message from {chatData.SenderName}: {chatData.Message}");
+		GD.Print($"[NetworkManager] Chat message from {chatData.PlayerName}: {chatData.Message}");
 		CallDeferred(MethodName.EmitSignal, SignalName.MessageReceived, "ChatMessage", Variant.From(chatData));
 	}
 
@@ -220,7 +219,7 @@ public partial class NetworkManager : Node
 			var chatMessage = new ChatMessage
 			{
 				Message = message,
-				Channel = channel
+				ChatType = channel
 			};
 
 			await _hubConnection.InvokeAsync("SendChatMessage", chatMessage);

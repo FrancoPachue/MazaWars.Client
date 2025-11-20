@@ -68,7 +68,7 @@ public partial class Player : CharacterBody2D
 		// Get or create visual components
 		_sprite = GetNodeOrNull<ColorRect>("Sprite");
 		_nameLabel = GetNodeOrNull<Label>("NameLabel");
-		_healthBar = GetNodeOrNull<Label>("HealthBar");
+		_healthBar = GetNodeOrNull<ProgressBar>("HealthBar");
 
 		if (_sprite == null)
 		{
