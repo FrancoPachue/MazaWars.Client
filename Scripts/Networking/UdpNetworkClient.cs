@@ -18,8 +18,10 @@ public partial class UdpNetworkClient : Node
 	[Export] public int ServerPort { get; set; } = 5001;
 
 	[Signal] public delegate void UdpMessageReceivedEventHandler(byte[] data);
-	[Signal] public delegate void WorldUpdateReceivedEventHandler(WorldUpdateMessage update);
 	[Signal] public delegate void ConnectionErrorEventHandler(string error);
+
+	// Use C# event instead of Godot signal for complex types
+	public event Action<WorldUpdateMessage> WorldUpdateReceived;
 
 	private UdpClient _udpClient;
 	private IPEndPoint _serverEndpoint;
@@ -177,13 +179,18 @@ public partial class UdpNetworkClient : Node
 			// Deserialize as WorldUpdateMessage directly
 			var update = MessagePackSerializer.Deserialize<WorldUpdateMessage>(data);
 
-			// Emit the update signal using CallDeferred to avoid threading issues
-			CallDeferred(MethodName.EmitSignal, SignalName.WorldUpdateReceived, update);
+			// Invoke C# event on main thread to avoid threading issues
+			CallDeferred(nameof(InvokeWorldUpdateReceived), update);
 		}
 		catch (Exception ex)
 		{
 			GD.PrintErr($"[UdpClient] Failed to process received data: {ex.Message}");
 		}
+	}
+
+	private void InvokeWorldUpdateReceived(WorldUpdateMessage update)
+	{
+		WorldUpdateReceived?.Invoke(update);
 	}
 
 	public override void _Process(double delta)
