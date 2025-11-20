@@ -5,7 +5,10 @@ namespace MazeWars.Client.Shared.NetworkModels;
 
 /// <summary>
 /// Base network message with MessagePack serialization support.
-/// Uses MessagePackSerializer.Typeless to properly handle the object Data field.
+///
+/// This follows the MessagePack specification where the Type field acts as a discriminator
+/// and the Data field contains pre-serialized MessagePack bytes of the actual message payload.
+/// This approach is portable across all MessagePack implementations.
 /// </summary>
 [MessagePackObject]
 public class NetworkMessage
@@ -17,11 +20,11 @@ public class NetworkMessage
     public string PlayerId { get; set; } = string.Empty;
 
     /// <summary>
-    /// Data field - must be deserialized using MessagePackSerializer.Typeless
-    /// to preserve type information across serialization boundaries.
+    /// Pre-serialized MessagePack data.
+    /// Deserialize based on the Type field using: MessagePackSerializer.Deserialize&lt;T&gt;(Data)
     /// </summary>
     [Key(2)]
-    public object Data { get; set; } = null!;
+    public byte[] Data { get; set; } = Array.Empty<byte>();
 
     [Key(3)]
     public DateTime Timestamp { get; set; } = DateTime.UtcNow;
