@@ -223,11 +223,8 @@ public partial class UdpNetworkClient : Node
 			EmitSignal(SignalName.UdpMessageReceived, data);
 
 			// Strategy 1: Try deserializing directly as specific message types (no wrapper)
-			// This handles the case where server sends raw MessagePack objects
-
 			if (!_isAuthenticated)
 			{
-				// During connection phase, try ConnectResponseData directly first
 				try
 				{
 					var response = MessagePackSerializer.Deserialize<ConnectResponseData>(data);
@@ -245,10 +242,7 @@ public partial class UdpNetworkClient : Node
 						return;
 					}
 				}
-				catch
-				{
-					// Not a direct ConnectResponseData, continue
-				}
+				catch { }
 			}
 
 			// Try WorldUpdateMessage (most common) - direct deserialization
@@ -261,183 +255,166 @@ public partial class UdpNetworkClient : Node
 					return;
 				}
 			}
-			catch
-			{
-				// Not a direct WorldUpdateMessage
-			}
+			catch { }
 
 			// Strategy 2: Try deserializing as NetworkMessage wrapper
-			// This handles the case where server wraps messages in NetworkMessage
+			// The Type field acts as discriminator, Data field contains pre-serialized MessagePack bytes
 			try
 			{
 				var networkMessage = MessagePackSerializer.Deserialize<NetworkMessage>(data);
+
 				if (networkMessage != null && !string.IsNullOrEmpty(networkMessage.Type))
 				{
 					GD.Print($"[UdpClient] Received wrapped message type: {networkMessage.Type}");
 
-					// Try to extract and deserialize the Data field based on Type
-					// Note: The Data field is already deserialized by MessagePack into some type
-					// We need to re-serialize it and then deserialize to the correct type
-					if (networkMessage.Data != null)
+					if (networkMessage.Data == null || networkMessage.Data.Length == 0)
 					{
-						switch (networkMessage.Type.ToLowerInvariant())
-						{
-							case "connect_response":
-							case "connectresponse":
-								try
-								{
-									var responseBytes = MessagePackSerializer.Serialize(networkMessage.Data);
-									var response = MessagePackSerializer.Deserialize<ConnectResponseData>(responseBytes);
+						GD.PrintErr($"[UdpClient] NetworkMessage.Data is empty for type {networkMessage.Type}");
+						return;
+					}
 
-									if (response != null)
+					// Data is already MessagePack bytes, deserialize based on Type
+					switch (networkMessage.Type.ToLowerInvariant())
+					{
+						case "connect_response":
+						case "connectresponse":
+							try
+							{
+								var response = MessagePackSerializer.Deserialize<ConnectResponseData>(networkMessage.Data);
+								if (response != null)
+								{
+									if (response.Success)
 									{
-										if (response.Success)
-										{
-											_isAuthenticated = true;
-											PlayerId = response.PlayerId;
-											SessionToken = response.SessionToken;
-											GD.Print($"[UdpClient] Authenticated as {PlayerId}");
-										}
-										_connectionQueue.Enqueue(response);
+										_isAuthenticated = true;
+										PlayerId = response.PlayerId;
+										SessionToken = response.SessionToken;
+										GD.Print($"[UdpClient] Authenticated as {PlayerId}");
 									}
-									return;
+									_connectionQueue.Enqueue(response);
 								}
-								catch (Exception ex)
-								{
-									GD.PrintErr($"[UdpClient] Failed to extract ConnectResponse from wrapper: {ex.Message}");
-								}
-								break;
-
-							case "world_update":
-							case "worldupdate":
-								try
-								{
-									var updateBytes = MessagePackSerializer.Serialize(networkMessage.Data);
-									var update = MessagePackSerializer.Deserialize<WorldUpdateMessage>(updateBytes);
-
-									if (update != null && update.Players != null)
-									{
-										_updateQueue.Enqueue(update);
-									}
-									return;
-								}
-								catch (Exception ex)
-								{
-									GD.PrintErr($"[UdpClient] Failed to extract WorldUpdate from wrapper: {ex.Message}");
-								}
-								break;
-
-							case "player_states_batch":
-								try
-								{
-									var batchBytes = MessagePackSerializer.Serialize(networkMessage.Data);
-
-									// Try deserializing as PlayerStatesBatch first
-									try
-									{
-										var batch = MessagePackSerializer.Deserialize<PlayerStatesBatch>(batchBytes);
-										if (batch != null && batch.Players != null)
-										{
-											// Convert PlayerStatesBatch to WorldUpdateMessage for compatibility
-											var update = new WorldUpdateMessage
-											{
-												Players = batch.Players,
-												ServerTime = batch.ServerTime,
-												FrameNumber = batch.FrameNumber,
-												AcknowledgedInputs = new(),
-												CombatEvents = new(),
-												LootUpdates = new(),
-												MobUpdates = new()
-											};
-											_updateQueue.Enqueue(update);
-											return;
-										}
-									}
-									catch
-									{
-										// Try as a simple list of PlayerStateUpdate
-										var playersList = MessagePackSerializer.Deserialize<List<PlayerStateUpdate>>(batchBytes);
-										if (playersList != null && playersList.Count > 0)
-										{
-											// Convert to WorldUpdateMessage for compatibility
-											var update = new WorldUpdateMessage
-											{
-												Players = playersList,
-												ServerTime = 0,
-												FrameNumber = 0,
-												AcknowledgedInputs = new(),
-												CombatEvents = new(),
-												LootUpdates = new(),
-												MobUpdates = new()
-											};
-											_updateQueue.Enqueue(update);
-											return;
-										}
-									}
-
-									GD.PrintErr($"[UdpClient] Failed to deserialize player_states_batch data");
-									return;
-								}
-								catch (Exception ex)
-								{
-									GD.PrintErr($"[UdpClient] Failed to extract PlayerStatesBatch from wrapper: {ex.Message}");
-								}
-								break;
-
-							case "chat":
-							case "chat_message":
-								try
-								{
-									var chatBytes = MessagePackSerializer.Serialize(networkMessage.Data);
-									var chat = MessagePackSerializer.Deserialize<ChatReceivedData>(chatBytes);
-
-									if (chat != null && !string.IsNullOrEmpty(chat.Message))
-									{
-										_chatQueue.Enqueue(chat);
-									}
-									return;
-								}
-								catch (Exception ex)
-								{
-									GD.PrintErr($"[UdpClient] Failed to extract Chat from wrapper: {ex.Message}");
-								}
-								break;
-
-							case "combat":
-							case "combat_event":
-								try
-								{
-									var combatBytes = MessagePackSerializer.Serialize(networkMessage.Data);
-									var combat = MessagePackSerializer.Deserialize<CombatEvent>(combatBytes);
-
-									if (combat != null)
-									{
-										_combatQueue.Enqueue(combat);
-									}
-									return;
-								}
-								catch (Exception ex)
-								{
-									GD.PrintErr($"[UdpClient] Failed to extract CombatEvent from wrapper: {ex.Message}");
-								}
-								break;
-
-							default:
-								GD.PrintErr($"[UdpClient] Unknown wrapped message type: {networkMessage.Type} ({data.Length} bytes)");
 								return;
-						}
+							}
+							catch (Exception ex)
+							{
+								GD.PrintErr($"[UdpClient] Failed to deserialize ConnectResponse: {ex.Message}");
+							}
+							break;
+
+						case "world_update":
+						case "worldupdate":
+							try
+							{
+								var update = MessagePackSerializer.Deserialize<WorldUpdateMessage>(networkMessage.Data);
+								if (update != null && update.Players != null)
+								{
+									_updateQueue.Enqueue(update);
+								}
+								return;
+							}
+							catch (Exception ex)
+							{
+								GD.PrintErr($"[UdpClient] Failed to deserialize WorldUpdate: {ex.Message}");
+							}
+							break;
+
+						case "player_states_batch":
+							try
+							{
+								// Try as PlayerStatesBatch first
+								try
+								{
+									var batch = MessagePackSerializer.Deserialize<PlayerStatesBatch>(networkMessage.Data);
+									if (batch != null && batch.Players != null)
+									{
+										var update = new WorldUpdateMessage
+										{
+											Players = batch.Players,
+											ServerTime = batch.ServerTime,
+											FrameNumber = batch.FrameNumber,
+											AcknowledgedInputs = new(),
+											CombatEvents = new(),
+											LootUpdates = new(),
+											MobUpdates = new()
+										};
+										_updateQueue.Enqueue(update);
+										return;
+									}
+								}
+								catch
+								{
+									// Try as simple list
+									var playersList = MessagePackSerializer.Deserialize<List<PlayerStateUpdate>>(networkMessage.Data);
+									if (playersList != null && playersList.Count > 0)
+									{
+										var update = new WorldUpdateMessage
+										{
+											Players = playersList,
+											ServerTime = 0,
+											FrameNumber = 0,
+											AcknowledgedInputs = new(),
+											CombatEvents = new(),
+											LootUpdates = new(),
+											MobUpdates = new()
+										};
+										_updateQueue.Enqueue(update);
+										return;
+									}
+								}
+								GD.PrintErr($"[UdpClient] Failed to deserialize player_states_batch data");
+							}
+							catch (Exception ex)
+							{
+								GD.PrintErr($"[UdpClient] Failed to deserialize PlayerStatesBatch: {ex.Message}");
+							}
+							break;
+
+						case "chat":
+						case "chat_message":
+							try
+							{
+								var chat = MessagePackSerializer.Deserialize<ChatReceivedData>(networkMessage.Data);
+								if (chat != null && !string.IsNullOrEmpty(chat.Message))
+								{
+									_chatQueue.Enqueue(chat);
+								}
+								return;
+							}
+							catch (Exception ex)
+							{
+								GD.PrintErr($"[UdpClient] Failed to deserialize Chat: {ex.Message}");
+							}
+							break;
+
+						case "combat":
+						case "combat_event":
+							try
+							{
+								var combat = MessagePackSerializer.Deserialize<CombatEvent>(networkMessage.Data);
+								if (combat != null)
+								{
+									_combatQueue.Enqueue(combat);
+								}
+								return;
+							}
+							catch (Exception ex)
+							{
+								GD.PrintErr($"[UdpClient] Failed to deserialize CombatEvent: {ex.Message}");
+							}
+							break;
+
+						default:
+							GD.PrintErr($"[UdpClient] Unknown wrapped message type: {networkMessage.Type} ({data.Length} bytes)");
+							return;
 					}
 				}
 			}
-			catch
+			catch (Exception ex)
 			{
-				// Not a NetworkMessage wrapper either
+				GD.Print($"[UdpClient] Not a wrapped message: {ex.Message}");
 			}
 
-			// If we get here, we couldn't deserialize the message with any strategy
+			// If we get here, we couldn't deserialize the message
 			GD.PrintErr($"[UdpClient] Unknown message format received ({data.Length} bytes)");
-
-			// Debug: Print first few bytes to help diagnose the issue
 			var preview = string.Join(" ", data.Take(Math.Min(20, data.Length)).Select(b => b.ToString("X2")));
 			GD.Print($"[UdpClient] Message preview (hex): {preview}...");
 		}
