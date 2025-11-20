@@ -16,7 +16,7 @@ namespace MazeWars.Client.Scripts.Networking;
 public partial class UdpNetworkClient : Node
 {
 	[Export] public string ServerAddress { get; set; } = "127.0.0.1";
-	[Export] public int ServerPort { get; set; } = 5001;
+	[Export] public int ServerPort { get; set; } = 7001; // Must match server's UdpPort in appsettings.json
 
 	[Signal] public delegate void UdpMessageReceivedEventHandler(byte[] data);
 	[Signal] public delegate void ConnectionErrorEventHandler(string error);

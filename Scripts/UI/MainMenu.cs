@@ -50,7 +50,7 @@ public partial class MainMenu : Control
 
 		// Set defaults
 		_playerNameInput.Text = $"Player{GD.Randi() % 1000}";
-		_serverUrlInput.Text = "127.0.0.1:5001"; // UDP server address
+		_serverUrlInput.Text = "127.0.0.1:7001"; // UDP server address (must match server's UdpPort in appsettings.json)
 		_loadingPanel.Visible = false;
 
 		// Connect button signal
@@ -93,7 +93,7 @@ public partial class MainMenu : Control
 		// Parse server address (format: "host:port" or just "host")
 		var parts = serverUrl.Split(':');
 		var serverAddress = parts[0];
-		var serverPort = parts.Length > 1 && int.TryParse(parts[1], out var port) ? port : 5001;
+		var serverPort = parts.Length > 1 && int.TryParse(parts[1], out var port) ? port : 7001; // Default to server's UDP port
 
 		_isConnecting = true;
 		_connectButton.Disabled = true;
