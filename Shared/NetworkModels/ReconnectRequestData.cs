@@ -1,6 +1,6 @@
 using MessagePack;
 
-namespace MazeWars.GameServer.Network.Models;
+namespace MazeWars.Client.Shared.NetworkModels;
 
 /// <summary>
 /// Client request to reconnect using session token.

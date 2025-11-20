@@ -1,6 +1,6 @@
-﻿using MazeWars.GameServer.Models;
+﻿using MazeWars.Client.Shared.NetworkModels;
 
-namespace MazeWars.GameServer.Network.Models;
+namespace MazeWars.Client.Shared.NetworkModels;
 
 public class ClientConnectedData
 {

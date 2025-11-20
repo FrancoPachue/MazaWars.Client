@@ -1,8 +1,8 @@
 using MazeWars.GameServer.Engine.Network;
-using MazeWars.GameServer.Models;
+using MazeWars.Client.Shared.NetworkModels;
 using MessagePack;
 
-namespace MazeWars.GameServer.Network.Models;
+namespace MazeWars.Client.Shared.NetworkModels;
 
 /// <summary>
 /// Server response to reconnect request with restored state.

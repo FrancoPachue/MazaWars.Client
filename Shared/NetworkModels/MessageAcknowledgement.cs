@@ -1,6 +1,6 @@
 ﻿using MessagePack;
 
-namespace MazeWars.GameServer.Network.Models;
+namespace MazeWars.Client.Shared.NetworkModels;
 
 /// <summary>
 /// Message acknowledgement from client to server.
