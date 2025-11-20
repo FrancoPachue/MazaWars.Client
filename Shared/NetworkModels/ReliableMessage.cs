@@ -6,7 +6,7 @@ namespace MazeWars.Client.Shared.NetworkModels;
 /// <summary>
 /// Reliable messaging with retry and acknowledgement.
 /// </summary>
-[MessagePackObject]
+[MessagePackObject(keyAsPropertyName: false)]
 public class ReliableMessage
 {
     [Key(0)]

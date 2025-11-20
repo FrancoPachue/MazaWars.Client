@@ -3,7 +3,7 @@ using MessagePack;
 
 namespace MazeWars.Client.Shared.NetworkModels;
 
-[MessagePackObject]
+[MessagePackObject(keyAsPropertyName: false)]
 public class LootUpdate
 {
     [Key(0)]

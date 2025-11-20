@@ -5,7 +5,7 @@ namespace MazeWars.Client.Shared.NetworkModels;
 /// <summary>
 /// Message acknowledgement from client to server.
 /// </summary>
-[MessagePackObject]
+[MessagePackObject(keyAsPropertyName: false)]
 public class MessageAcknowledgement
 {
     [Key(0)]
