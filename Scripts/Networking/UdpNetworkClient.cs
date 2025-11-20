@@ -21,8 +21,11 @@ public partial class UdpNetworkClient : Node
 	[Signal] public delegate void UdpMessageReceivedEventHandler(byte[] data);
 	[Signal] public delegate void ConnectionErrorEventHandler(string error);
 
-	// Use C# event instead of Godot signal for complex types
-	public event Action<WorldUpdateMessage> WorldUpdateReceived;
+	// C# Events for complex types (Godot signals don't support custom classes)
+	public event Action<ConnectResponseData>? ConnectionResponse;
+	public event Action<WorldUpdateMessage>? WorldUpdateReceived;
+	public event Action<ChatReceivedData>? ChatMessageReceived;
+	public event Action<CombatEvent>? CombatEventReceived;
 
 	private UdpClient _udpClient;
 	private IPEndPoint _serverEndpoint;
@@ -30,8 +33,16 @@ public partial class UdpNetworkClient : Node
 	private bool _isRunning;
 	private Task _receiveTask;
 
-	// Thread-safe queue for WorldUpdateMessages from background thread
+	// Thread-safe queues for messages from background thread
+	private ConcurrentQueue<ConnectResponseData> _connectionQueue = new ConcurrentQueue<ConnectResponseData>();
 	private ConcurrentQueue<WorldUpdateMessage> _updateQueue = new ConcurrentQueue<WorldUpdateMessage>();
+	private ConcurrentQueue<ChatReceivedData> _chatQueue = new ConcurrentQueue<ChatReceivedData>();
+	private ConcurrentQueue<CombatEvent> _combatQueue = new ConcurrentQueue<CombatEvent>();
+
+	// Connection state
+	private bool _isAuthenticated = false;
+	public string PlayerId { get; private set; } = string.Empty;
+	public string SessionToken { get; private set; } = string.Empty;
 
 	// Statistics
 	private int _packetsSent = 0;
@@ -39,6 +50,7 @@ public partial class UdpNetworkClient : Node
 	private DateTime _lastPacketTime;
 
 	public bool IsConnected => _isRunning && _udpClient != null;
+	public bool IsAuthenticated => _isAuthenticated;
 	public int PacketsSent => _packetsSent;
 	public int PacketsReceived => _packetsReceived;
 
@@ -48,7 +60,10 @@ public partial class UdpNetworkClient : Node
 		_serverEndpoint = new IPEndPoint(IPAddress.Parse(ServerAddress), ServerPort);
 	}
 
-	public void Connect()
+	/// <summary>
+	/// Connects to the server and sends authentication data
+	/// </summary>
+	public void ConnectToServer(string playerName, string playerClass, string teamId = "team_red")
 	{
 		if (_isRunning)
 		{
@@ -58,6 +73,7 @@ public partial class UdpNetworkClient : Node
 
 		try
 		{
+			// Open UDP connection
 			_udpClient = new UdpClient();
 			_udpClient.Client.ReceiveTimeout = 5000; // 5 second timeout
 			_udpClient.Connect(_serverEndpoint);
@@ -69,6 +85,26 @@ public partial class UdpNetworkClient : Node
 			_receiveTask = Task.Run(() => ReceiveLoop(_cancellationToken.Token));
 
 			GD.Print($"[UdpClient] Connected to {ServerAddress}:{ServerPort}");
+
+			// Send connection request
+			var connectData = new ClientConnectData
+			{
+				PlayerName = playerName,
+				PlayerClass = playerClass,
+				TeamId = teamId,
+				AuthToken = string.Empty // No auth for now
+			};
+
+			// Wrap in NetworkMessage
+			var message = new NetworkMessage
+			{
+				Type = "connect",
+				Data = connectData,
+				Timestamp = DateTime.UtcNow
+			};
+
+			SendMessage(message);
+			GD.Print($"[UdpClient] Sent connection request for player '{playerName}' ({playerClass})");
 		}
 		catch (Exception ex)
 		{
@@ -180,11 +216,79 @@ public partial class UdpNetworkClient : Node
 			// Emit raw data signal
 			EmitSignal(SignalName.UdpMessageReceived, data);
 
-			// Deserialize as WorldUpdateMessage directly
-			var update = MessagePackSerializer.Deserialize<WorldUpdateMessage>(data);
+			// Try to determine message type by attempting deserialization
+			// Priority: ConnectResponse (during auth) > WorldUpdate (most frequent) > Chat > Combat
 
-			// Enqueue for processing on main thread
-			_updateQueue.Enqueue(update);
+			if (!_isAuthenticated)
+			{
+				// During connection phase, expect ConnectResponseData
+				try
+				{
+					var response = MessagePackSerializer.Deserialize<ConnectResponseData>(data);
+					if (response != null)
+					{
+						if (response.Success)
+						{
+							_isAuthenticated = true;
+							PlayerId = response.PlayerId;
+							SessionToken = response.SessionToken;
+						}
+						_connectionQueue.Enqueue(response);
+						return;
+					}
+				}
+				catch
+				{
+					// Not a ConnectResponseData, continue trying other types
+				}
+			}
+
+			// Try WorldUpdateMessage (most common)
+			try
+			{
+				var update = MessagePackSerializer.Deserialize<WorldUpdateMessage>(data);
+				if (update != null && update.Players != null)
+				{
+					_updateQueue.Enqueue(update);
+					return;
+				}
+			}
+			catch
+			{
+				// Not a WorldUpdateMessage
+			}
+
+			// Try ChatReceivedData
+			try
+			{
+				var chat = MessagePackSerializer.Deserialize<ChatReceivedData>(data);
+				if (chat != null && !string.IsNullOrEmpty(chat.Message))
+				{
+					_chatQueue.Enqueue(chat);
+					return;
+				}
+			}
+			catch
+			{
+				// Not a ChatReceivedData
+			}
+
+			// Try CombatEvent
+			try
+			{
+				var combat = MessagePackSerializer.Deserialize<CombatEvent>(data);
+				if (combat != null)
+				{
+					_combatQueue.Enqueue(combat);
+					return;
+				}
+			}
+			catch
+			{
+				// Not a CombatEvent
+			}
+
+			GD.PrintErr($"[UdpClient] Unknown message type received ({data.Length} bytes)");
 		}
 		catch (Exception ex)
 		{
@@ -194,10 +298,30 @@ public partial class UdpNetworkClient : Node
 
 	public override void _Process(double delta)
 	{
-		// Process queued WorldUpdateMessages on main thread
+		// Process all queued messages on main thread (Godot thread-safe)
+
+		// Connection responses
+		while (_connectionQueue.TryDequeue(out var response))
+		{
+			ConnectionResponse?.Invoke(response);
+		}
+
+		// World updates (most frequent)
 		while (_updateQueue.TryDequeue(out var update))
 		{
 			WorldUpdateReceived?.Invoke(update);
+		}
+
+		// Chat messages
+		while (_chatQueue.TryDequeue(out var chat))
+		{
+			ChatMessageReceived?.Invoke(chat);
+		}
+
+		// Combat events
+		while (_combatQueue.TryDequeue(out var combat))
+		{
+			CombatEventReceived?.Invoke(combat);
 		}
 
 		// Check for connection timeout (no packets for 10 seconds)
