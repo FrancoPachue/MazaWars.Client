@@ -124,13 +124,9 @@ public partial class UdpNetworkClient : Node
 
 	public void SendPlayerInput(PlayerInputMessage input)
 	{
-		SendMessage(new NetworkMessage
-		{
-			Type = "PlayerInput",
-			PlayerId = input.PlayerId,
-			Data = input,
-			Timestamp = DateTime.UtcNow
-		});
+		// Send input directly without wrapping in NetworkMessage
+		// The server will identify the player from the UDP endpoint
+		SendMessage(input);
 	}
 
 	private async Task ReceiveLoop(CancellationToken token)
@@ -178,16 +174,11 @@ public partial class UdpNetworkClient : Node
 			// Emit raw data signal
 			EmitSignal(SignalName.UdpMessageReceived, data);
 
-			// Try to deserialize as WorldUpdateMessage
-			var message = MessagePackSerializer.Deserialize<NetworkMessage>(data);
+			// Deserialize as WorldUpdateMessage directly
+			var update = MessagePackSerializer.Deserialize<WorldUpdateMessage>(data);
 
-			if (message.Type == "WorldUpdate")
-			{
-				var update = MessagePackSerializer.Deserialize<WorldUpdateMessage>(
-					MessagePackSerializer.Serialize(message.Data)
-				);
-				EmitSignal(SignalName.WorldUpdateReceived, update);
-			}
+			// Emit the update signal using CallDeferred to avoid threading issues
+			CallDeferred(MethodName.EmitSignal, SignalName.WorldUpdateReceived, update);
 		}
 		catch (Exception ex)
 		{
