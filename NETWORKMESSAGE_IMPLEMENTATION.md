@@ -65,22 +65,77 @@ var dataLength = (int)(dataEndPos - dataStartPos);
 var dataBytes = new byte[dataLength];
 Array.Copy(data, (int)dataStartPos, dataBytes, 0, dataLength);
 
-// Ahora deserializar dataBytes al tipo correcto
+// ⚠️ IMPORTANTE: El servidor envía OBJETOS ANÓNIMOS, no clases tipadas
+// Deserializar como object, luego mapear manualmente
 switch (messageType.ToLowerInvariant())
 {
-    case "player_states_batch":
-        var batch = MessagePackSerializer.Deserialize<PlayerStatesBatch>(dataBytes);
-        // Procesar batch...
+    case "connected":
+        // Servidor envía: { PlayerId, WorldId, IsInLobby, SessionToken, ... }
+        var dataObj = MessagePackSerializer.Deserialize<object>(dataBytes);
+        if (dataObj is object[] dataArray && dataArray.Length >= 5)
+        {
+            var response = new ConnectResponseData
+            {
+                Success = true,
+                PlayerId = dataArray[0]?.ToString() ?? string.Empty,
+                WorldId = dataArray[1]?.ToString() ?? string.Empty,
+                IsInLobby = dataArray[2] is bool b && b,
+                SessionToken = dataArray[3]?.ToString() ?? string.Empty
+            };
+            // Procesar response...
+        }
         break;
 
-    case "connect_response":
-        var response = MessagePackSerializer.Deserialize<ConnectResponseData>(dataBytes);
-        // Procesar response...
+    case "player_states_batch":
+        // Servidor envía: { Players = [...], BatchIndex, TotalBatches }
+        var batchObj = MessagePackSerializer.Deserialize<object>(dataBytes);
+        if (batchObj is object[] batchArray && batchArray.Length >= 1)
+        {
+            if (batchArray[0] is object[] playersArray)
+            {
+                foreach (var playerObj in playersArray)
+                {
+                    if (playerObj is object[] playerData && playerData.Length >= 13)
+                    {
+                        var player = new PlayerStateUpdate
+                        {
+                            PlayerId = playerData[0]?.ToString() ?? string.Empty,
+                            Position = ParseVector2(playerData[1]),
+                            Velocity = ParseVector2(playerData[2]),
+                            Direction = Convert.ToSingle(playerData[3]),
+                            Health = Convert.ToInt32(playerData[4]),
+                            MaxHealth = Convert.ToInt32(playerData[5])
+                            // ... otros campos
+                        };
+                    }
+                }
+            }
+        }
         break;
+}
+
+// Helper para parsear Vector2
+private Vector2 ParseVector2(object data)
+{
+    if (data is object[] arr && arr.Length >= 2)
+    {
+        return new Vector2
+        {
+            X = Convert.ToSingle(arr[0]),
+            Y = Convert.ToSingle(arr[1])
+        };
+    }
+    return new Vector2();
 }
 ```
 
-**⚠️ Por qué extraer manualmente:** Cuando MessagePack deserializa `NetworkMessage` con `object Data`, convierte el campo Data a un tipo interno que NO se puede re-serializar correctamente. Extrayendo los bytes crudos directamente, evitamos este problema.
+**⚠️ Por qué deserializar como object[]:**
+1. El servidor envía **objetos anónimos** usando `new { ... }`, NO clases tipadas
+2. MessagePack serializa objetos con `keyAsPropertyName: false` como arrays
+3. Necesitamos deserializar como `object` primero, luego castear a `object[]`
+4. Finalmente mapeamos manualmente los índices a propiedades de clases
+
+Esta es la **misma estrategia que usa el servidor** en `NetworkService.cs` con `ConvertMessageData<T>()` y `MapArrayToType<T>()`.
 
 ## Por Qué `keyAsPropertyName: false` es Crucial
 
@@ -139,15 +194,39 @@ Todos estos modelos ahora tienen `keyAsPropertyName: false`:
 - ✅ UseItemMessage
 - ✅ ExtractionMessage
 
-### ⚠️ Importante: PlayerStatesBatch
+### ⚠️ Importante: Objetos Anónimos del Servidor
 
-**PlayerStatesBatch NO existe en el servidor.** El servidor usa `WorldUpdateMessage` para enviar actualizaciones de jugadores con el tipo de mensaje `"player_states_batch"`.
+**El servidor envía OBJETOS ANÓNIMOS, no clases tipadas completas.**
 
-Cuando el cliente recibe mensajes con tipo `"player_states_batch"`, debe deserializar como `WorldUpdateMessage`, no como `PlayerStatesBatch`.
+El servidor usa `CreateNetworkMessage()` con objetos anónimos:
 
-La estructura de Keys es diferente:
-- `WorldUpdateMessage`: Keys 0-6 (AcknowledgedInputs, ServerTime, FrameNumber, Players, CombatEvents, LootUpdates, MobUpdates)
-- `PlayerStatesBatch`: Keys 0-2 (Players, ServerTime, FrameNumber) - estructura incorrecta
+```csharp
+// NetworkService.cs en el servidor
+CreateNetworkMessage("connected", player.PlayerId, new {
+    player.PlayerId,
+    WorldId = worldId,
+    IsInLobby = isLobby,
+    SessionToken = sessionToken,
+    SpawnPosition = player.Position,
+    PlayerStats = new { /* stats */ },
+    ServerInfo = new { /* config */ },
+    LobbyInfo = /* ... */
+})
+
+CreateNetworkMessage("player_states_batch", string.Empty, new {
+    Players = playerUpdates,  // Lista de objetos anónimos
+    BatchIndex = i / maxPlayersPerBatch,
+    TotalBatches = totalBatches
+})
+```
+
+**Consecuencias para el cliente:**
+1. NO puedes deserializar directamente a `ConnectResponseData` o `WorldUpdateMessage`
+2. Debes deserializar como `object` → `object[]` → mapear manualmente
+3. Los índices de array corresponden al orden de las propiedades en el objeto anónimo
+4. Esta es la misma estrategia que usa el servidor en `NetworkService.cs`
+
+**PlayerStatesBatch:** NO existe en el servidor. El servidor envía `"player_states_batch"` con un objeto anónimo que tiene solo `Players`, `BatchIndex`, y `TotalBatches`.
 
 ## Ejemplo Completo: Flujo de Mensajes
 
