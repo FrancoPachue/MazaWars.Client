@@ -16,7 +16,9 @@ public partial class NetworkManager : Node
 	[Signal] public delegate void ConnectedEventHandler();
 	[Signal] public delegate void DisconnectedEventHandler();
 	[Signal] public delegate void ConnectionErrorEventHandler(string error);
-	[Signal] public delegate void MessageReceivedEventHandler(string messageType, Variant data);
+
+	// C# Events for complex types (Variant doesn't work well with DTOs)
+	public event Action<string, object>? MessageReceived;
 
 	private HubConnection _hubConnection;
 	private bool _isConnecting;
@@ -163,7 +165,7 @@ public partial class NetworkManager : Node
 	private void OnMessageReceived(string messageType, object data)
 	{
 		GD.Print($"[NetworkManager] Received message: {messageType}");
-		CallDeferred(MethodName.EmitSignal, SignalName.MessageReceived, messageType, Variant.From(data));
+		MessageReceived?.Invoke(messageType, data);
 	}
 
 	private void OnPlayerConnected(string playerId)
@@ -178,14 +180,14 @@ public partial class NetworkManager : Node
 
 	private void OnWorldUpdate(WorldUpdateMessage update)
 	{
-		// Forward to message handler via signal
-		CallDeferred(MethodName.EmitSignal, SignalName.MessageReceived, "WorldUpdate", Variant.From(update));
+		// Forward to message handler via C# event
+		MessageReceived?.Invoke("WorldUpdate", update);
 	}
 
 	private void OnChatMessage(ChatReceivedData chatData)
 	{
 		GD.Print($"[NetworkManager] Chat message from {chatData.PlayerName}: {chatData.Message}");
-		CallDeferred(MethodName.EmitSignal, SignalName.MessageReceived, "ChatMessage", Variant.From(chatData));
+		MessageReceived?.Invoke("ChatMessage", chatData);
 	}
 
 	public async Task SendMessageAsync(string messageType, object data)

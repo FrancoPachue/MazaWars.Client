@@ -209,6 +209,10 @@ public struct Vector2
 
     public static implicit operator Vector2((float x, float y) tuple) => new(tuple.x, tuple.y);
 
+    // Conversión desde/hacia System.Numerics.Vector2
+    public static implicit operator Vector2(System.Numerics.Vector2 v) => new(v.X, v.Y);
+    public static implicit operator System.Numerics.Vector2(Vector2 v) => new(v.X, v.Y);
+
     // =============================================
     // EXTENSIONS ESPECÍFICAS PARA EL JUEGO
     // =============================================
