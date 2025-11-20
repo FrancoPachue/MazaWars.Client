@@ -220,79 +220,112 @@ public partial class UdpNetworkClient : Node
 			// Emit raw data signal
 			EmitSignal(SignalName.UdpMessageReceived, data);
 
-			// Try to determine message type by attempting deserialization
-			// Priority: ConnectResponse (during auth) > WorldUpdate (most frequent) > Chat > Combat
-
-			if (!_isAuthenticated)
+			// First, deserialize as NetworkMessage wrapper
+			NetworkMessage networkMessage;
+			try
 			{
-				// During connection phase, expect ConnectResponseData
-				try
+				networkMessage = MessagePackSerializer.Deserialize<NetworkMessage>(data);
+				if (networkMessage == null || string.IsNullOrEmpty(networkMessage.Type))
 				{
-					var response = MessagePackSerializer.Deserialize<ConnectResponseData>(data);
-					if (response != null)
+					GD.PrintErr($"[UdpClient] Received invalid NetworkMessage ({data.Length} bytes)");
+					return;
+				}
+			}
+			catch (Exception ex)
+			{
+				GD.PrintErr($"[UdpClient] Failed to deserialize NetworkMessage: {ex.Message} ({data.Length} bytes)");
+				return;
+			}
+
+			GD.Print($"[UdpClient] Received message type: {networkMessage.Type}");
+
+			// Process based on message type
+			switch (networkMessage.Type.ToLowerInvariant())
+			{
+				case "connect_response":
+				case "connectresponse":
+					try
 					{
-						if (response.Success)
+						// The Data field contains the serialized ConnectResponseData
+						var responseBytes = MessagePackSerializer.Serialize(networkMessage.Data);
+						var response = MessagePackSerializer.Deserialize<ConnectResponseData>(responseBytes);
+
+						if (response != null)
 						{
-							_isAuthenticated = true;
-							PlayerId = response.PlayerId;
-							SessionToken = response.SessionToken;
+							if (response.Success)
+							{
+								_isAuthenticated = true;
+								PlayerId = response.PlayerId;
+								SessionToken = response.SessionToken;
+								GD.Print($"[UdpClient] Authenticated as {PlayerId}");
+							}
+							_connectionQueue.Enqueue(response);
 						}
-						_connectionQueue.Enqueue(response);
-						return;
 					}
-				}
-				catch
-				{
-					// Not a ConnectResponseData, continue trying other types
-				}
-			}
+					catch (Exception ex)
+					{
+						GD.PrintErr($"[UdpClient] Failed to process ConnectResponse: {ex.Message}");
+					}
+					break;
 
-			// Try WorldUpdateMessage (most common)
-			try
-			{
-				var update = MessagePackSerializer.Deserialize<WorldUpdateMessage>(data);
-				if (update != null && update.Players != null)
-				{
-					_updateQueue.Enqueue(update);
-					return;
-				}
-			}
-			catch
-			{
-				// Not a WorldUpdateMessage
-			}
+				case "world_update":
+				case "worldupdate":
+					try
+					{
+						var updateBytes = MessagePackSerializer.Serialize(networkMessage.Data);
+						var update = MessagePackSerializer.Deserialize<WorldUpdateMessage>(updateBytes);
 
-			// Try ChatReceivedData
-			try
-			{
-				var chat = MessagePackSerializer.Deserialize<ChatReceivedData>(data);
-				if (chat != null && !string.IsNullOrEmpty(chat.Message))
-				{
-					_chatQueue.Enqueue(chat);
-					return;
-				}
-			}
-			catch
-			{
-				// Not a ChatReceivedData
-			}
+						if (update != null && update.Players != null)
+						{
+							_updateQueue.Enqueue(update);
+						}
+					}
+					catch (Exception ex)
+					{
+						GD.PrintErr($"[UdpClient] Failed to process WorldUpdate: {ex.Message}");
+					}
+					break;
 
-			// Try CombatEvent
-			try
-			{
-				var combat = MessagePackSerializer.Deserialize<CombatEvent>(data);
-				if (combat != null)
-				{
-					_combatQueue.Enqueue(combat);
-					return;
-				}
-			}
-			catch
-			{
-				// Not a CombatEvent
-			}
+				case "chat":
+				case "chat_message":
+					try
+					{
+						var chatBytes = MessagePackSerializer.Serialize(networkMessage.Data);
+						var chat = MessagePackSerializer.Deserialize<ChatReceivedData>(chatBytes);
 
-			GD.PrintErr($"[UdpClient] Unknown message type received ({data.Length} bytes)");
+						if (chat != null && !string.IsNullOrEmpty(chat.Message))
+						{
+							_chatQueue.Enqueue(chat);
+						}
+					}
+					catch (Exception ex)
+					{
+						GD.PrintErr($"[UdpClient] Failed to process Chat: {ex.Message}");
+					}
+					break;
+
+				case "combat":
+				case "combat_event":
+					try
+					{
+						var combatBytes = MessagePackSerializer.Serialize(networkMessage.Data);
+						var combat = MessagePackSerializer.Deserialize<CombatEvent>(combatBytes);
+
+						if (combat != null)
+						{
+							_combatQueue.Enqueue(combat);
+						}
+					}
+					catch (Exception ex)
+					{
+						GD.PrintErr($"[UdpClient] Failed to process CombatEvent: {ex.Message}");
+					}
+					break;
+
+				default:
+					GD.PrintErr($"[UdpClient] Unknown message type: {networkMessage.Type} ({data.Length} bytes)");
+					break;
+			}
 		}
 		catch (Exception ex)
 		{
