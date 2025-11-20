@@ -173,9 +173,22 @@ public partial class UdpNetworkClient : Node
 
 	public void SendPlayerInput(PlayerInputMessage input)
 	{
-		// Send input directly without wrapping in NetworkMessage
-		// The server will identify the player from the UDP endpoint
-		SendMessage(input);
+		if (string.IsNullOrEmpty(PlayerId))
+		{
+			GD.PrintErr("[UdpClient] Cannot send input: PlayerId not set");
+			return;
+		}
+
+		// Wrap PlayerInputMessage in NetworkMessage (same as connect)
+		var message = new NetworkMessage
+		{
+			Type = "player_input",
+			PlayerId = PlayerId,
+			Data = input,
+			Timestamp = DateTime.UtcNow
+		};
+
+		SendMessage(message);
 	}
 
 	private async Task ReceiveLoop(CancellationToken token)
