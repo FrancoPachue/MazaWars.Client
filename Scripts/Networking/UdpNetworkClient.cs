@@ -229,16 +229,13 @@ public partial class UdpNetworkClient : Node
 				try
 				{
 					var response = MessagePackSerializer.Deserialize<ConnectResponseData>(data);
-					if (response != null && (!string.IsNullOrEmpty(response.PlayerId) || !string.IsNullOrEmpty(response.ErrorMessage)))
+					if (response != null && !string.IsNullOrEmpty(response.PlayerId))
 					{
-						GD.Print($"[UdpClient] Received ConnectResponse (direct): Success={response.Success}");
-						if (response.Success)
-						{
-							_isAuthenticated = true;
-							PlayerId = response.PlayerId;
-							SessionToken = response.SessionToken;
-							GD.Print($"[UdpClient] Authenticated as {PlayerId}");
-						}
+						GD.Print($"[UdpClient] Received ConnectResponse (direct): PlayerId={response.PlayerId}");
+						_isAuthenticated = true;
+						PlayerId = response.PlayerId;
+						SessionToken = response.SessionToken;
+						GD.Print($"[UdpClient] Authenticated as {PlayerId}");
 						_connectionQueue.Enqueue(response);
 						return;
 					}
@@ -302,7 +299,7 @@ public partial class UdpNetworkClient : Node
 								_isAuthenticated = true;
 								PlayerId = response.PlayerId;
 								SessionToken = response.SessionToken;
-								GD.Print($"[UdpClient] Connected as {PlayerId} (World: {response.WorldId}, Lobby: {response.IsInLobby})");
+								GD.Print($"[UdpClient] Connected as {PlayerId} (World: {response.WorldId}, Lobby: {response.IsLobby})");
 								_connectionQueue.Enqueue(response);
 								return;
 							}
