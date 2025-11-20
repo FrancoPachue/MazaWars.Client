@@ -1,6 +1,6 @@
 ﻿using MessagePack;
 
-namespace MazeWars.GameServer.Network.Models;
+namespace MazeWars.Client.Shared.NetworkModels;
 
 /// <summary>
 /// Extraction request from client to server.

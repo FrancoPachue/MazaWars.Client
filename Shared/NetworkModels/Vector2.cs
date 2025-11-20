@@ -1,7 +1,7 @@
 ﻿using System;
 using MessagePack;
 
-namespace MazeWars.GameServer.Models;
+namespace MazeWars.Client.Shared.NetworkModels;
 
 [MessagePackObject]
 public struct Vector2

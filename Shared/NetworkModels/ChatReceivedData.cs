@@ -1,7 +1,7 @@
 ﻿using System;
 using MessagePack;
 
-namespace MazeWars.GameServer.Network.Models;
+namespace MazeWars.Client.Shared.NetworkModels;
 
 /// <summary>
 /// Chat message broadcast from server to clients.

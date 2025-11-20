@@ -1,4 +1,4 @@
-﻿namespace MazeWars.GameServer.Network.Models;
+﻿namespace MazeWars.Client.Shared.NetworkModels;
 
 public class RoomStateUpdate
 {
