@@ -1,5 +1,6 @@
 using Godot;
 using System;
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading;
@@ -28,6 +29,9 @@ public partial class UdpNetworkClient : Node
 	private CancellationTokenSource _cancellationToken;
 	private bool _isRunning;
 	private Task _receiveTask;
+
+	// Thread-safe queue for WorldUpdateMessages from background thread
+	private ConcurrentQueue<WorldUpdateMessage> _updateQueue = new ConcurrentQueue<WorldUpdateMessage>();
 
 	// Statistics
 	private int _packetsSent = 0;
@@ -179,8 +183,8 @@ public partial class UdpNetworkClient : Node
 			// Deserialize as WorldUpdateMessage directly
 			var update = MessagePackSerializer.Deserialize<WorldUpdateMessage>(data);
 
-			// Invoke C# event on main thread to avoid threading issues
-			CallDeferred(nameof(InvokeWorldUpdateReceived), update);
+			// Enqueue for processing on main thread
+			_updateQueue.Enqueue(update);
 		}
 		catch (Exception ex)
 		{
@@ -188,13 +192,14 @@ public partial class UdpNetworkClient : Node
 		}
 	}
 
-	private void InvokeWorldUpdateReceived(WorldUpdateMessage update)
-	{
-		WorldUpdateReceived?.Invoke(update);
-	}
-
 	public override void _Process(double delta)
 	{
+		// Process queued WorldUpdateMessages on main thread
+		while (_updateQueue.TryDequeue(out var update))
+		{
+			WorldUpdateReceived?.Invoke(update);
+		}
+
 		// Check for connection timeout (no packets for 10 seconds)
 		if (_isRunning && _packetsReceived > 0)
 		{
