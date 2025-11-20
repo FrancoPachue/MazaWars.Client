@@ -3,6 +3,8 @@ using System;
 using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
+using System.Text;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using MessagePack;
@@ -86,7 +88,7 @@ public partial class UdpNetworkClient : Node
 
 			GD.Print($"[UdpClient] Connected to {ServerAddress}:{ServerPort}");
 
-			// Send connection request
+			// Send connection request (server expects JSON, not MessagePack for initial connection)
 			var connectData = new ClientConnectData
 			{
 				PlayerName = playerName,
@@ -103,8 +105,13 @@ public partial class UdpNetworkClient : Node
 				Timestamp = DateTime.UtcNow
 			};
 
-			SendMessage(message);
-			GD.Print($"[UdpClient] Sent connection request for player '{playerName}' ({playerClass})");
+			// Serialize as JSON (server uses JSON for connection messages)
+			var json = JsonSerializer.Serialize(message);
+			var bytes = Encoding.UTF8.GetBytes(json);
+			_udpClient.Send(bytes, bytes.Length);
+			_packetsSent++;
+
+			GD.Print($"[UdpClient] Sent connection request for player '{playerName}' ({playerClass}) as JSON");
 		}
 		catch (Exception ex)
 		{
