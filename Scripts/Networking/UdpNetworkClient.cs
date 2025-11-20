@@ -370,7 +370,7 @@ public partial class UdpNetworkClient : Node
 									Players = players,
 									ServerTime = 0,
 									FrameNumber = 0,
-									AcknowledgedInputs = new(),
+									AcknowledgedInputs = batch.AcknowledgedInputs ?? new(),
 									CombatEvents = new(),
 									LootUpdates = new(),
 									MobUpdates = new()
