@@ -1,6 +1,7 @@
 using Godot;
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
@@ -309,7 +310,6 @@ public partial class UdpNetworkClient : Node
 
 							case "world_update":
 							case "worldupdate":
-							case "player_states_batch":
 								try
 								{
 									var updateBytes = MessagePackSerializer.Serialize(networkMessage.Data);
@@ -324,6 +324,63 @@ public partial class UdpNetworkClient : Node
 								catch (Exception ex)
 								{
 									GD.PrintErr($"[UdpClient] Failed to extract WorldUpdate from wrapper: {ex.Message}");
+								}
+								break;
+
+							case "player_states_batch":
+								try
+								{
+									var batchBytes = MessagePackSerializer.Serialize(networkMessage.Data);
+
+									// Try deserializing as PlayerStatesBatch first
+									try
+									{
+										var batch = MessagePackSerializer.Deserialize<PlayerStatesBatch>(batchBytes);
+										if (batch != null && batch.Players != null)
+										{
+											// Convert PlayerStatesBatch to WorldUpdateMessage for compatibility
+											var update = new WorldUpdateMessage
+											{
+												Players = batch.Players,
+												ServerTime = batch.ServerTime,
+												FrameNumber = batch.FrameNumber,
+												AcknowledgedInputs = new(),
+												CombatEvents = new(),
+												LootUpdates = new(),
+												MobUpdates = new()
+											};
+											_updateQueue.Enqueue(update);
+											return;
+										}
+									}
+									catch
+									{
+										// Try as a simple list of PlayerStateUpdate
+										var playersList = MessagePackSerializer.Deserialize<List<PlayerStateUpdate>>(batchBytes);
+										if (playersList != null && playersList.Count > 0)
+										{
+											// Convert to WorldUpdateMessage for compatibility
+											var update = new WorldUpdateMessage
+											{
+												Players = playersList,
+												ServerTime = 0,
+												FrameNumber = 0,
+												AcknowledgedInputs = new(),
+												CombatEvents = new(),
+												LootUpdates = new(),
+												MobUpdates = new()
+											};
+											_updateQueue.Enqueue(update);
+											return;
+										}
+									}
+
+									GD.PrintErr($"[UdpClient] Failed to deserialize player_states_batch data");
+									return;
+								}
+								catch (Exception ex)
+								{
+									GD.PrintErr($"[UdpClient] Failed to extract PlayerStatesBatch from wrapper: {ex.Message}");
 								}
 								break;
 
