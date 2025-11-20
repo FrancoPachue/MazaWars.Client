@@ -5,7 +5,7 @@ namespace MazeWars.Client.Shared.NetworkModels;
 /// <summary>
 /// Connection messages from client to server.
 /// </summary>
-[MessagePackObject]
+[MessagePackObject(keyAsPropertyName: false)]
 public class ClientConnectData
 {
     [Key(0)]

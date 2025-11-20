@@ -6,7 +6,7 @@ namespace MazeWars.Client.Shared.NetworkModels;
 /// <summary>
 /// Batch of player states sent by server
 /// </summary>
-[MessagePackObject]
+[MessagePackObject(keyAsPropertyName: false)]
 public class PlayerStatesBatch
 {
 	[Key(0)]

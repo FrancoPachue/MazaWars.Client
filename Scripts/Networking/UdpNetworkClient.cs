@@ -88,7 +88,7 @@ public partial class UdpNetworkClient : Node
 
 			GD.Print($"[UdpClient] Connected to {ServerAddress}:{ServerPort}");
 
-			// Send connection request using MessagePack (consistent with all other messages)
+			// Send connection request - MessagePack handles object serialization automatically
 			var connectData = new ClientConnectData
 			{
 				PlayerName = playerName,
@@ -97,23 +97,20 @@ public partial class UdpNetworkClient : Node
 				AuthToken = string.Empty // No auth for now
 			};
 
-			// Pre-serialize the connect data to bytes
-			var connectDataBytes = MessagePackSerializer.Serialize(connectData);
-
-			// Wrap in NetworkMessage
+			// Wrap in NetworkMessage - pass object directly, MessagePack serializes recursively
 			var message = new NetworkMessage
 			{
 				Type = "connect",
-				Data = connectDataBytes,  // Pre-serialized bytes
+				Data = connectData,  // Pass object directly
 				Timestamp = DateTime.UtcNow
 			};
 
-			// Serialize the NetworkMessage
+			// Serialize the entire NetworkMessage
 			var bytes = MessagePackSerializer.Serialize(message);
 			_udpClient.Send(bytes, bytes.Length);
 			_packetsSent++;
 
-			GD.Print($"[UdpClient] Sent connection request for player '{playerName}' ({playerClass}) using MessagePack");
+			GD.Print($"[UdpClient] Sent connection request for player '{playerName}'");
 		}
 		catch (Exception ex)
 		{
@@ -261,7 +258,7 @@ public partial class UdpNetworkClient : Node
 			catch { }
 
 			// Strategy 2: Try deserializing as NetworkMessage wrapper
-			// The Type field acts as discriminator, Data field contains pre-serialized MessagePack bytes
+			// MessagePack deserializes the object Data field automatically
 			try
 			{
 				var networkMessage = MessagePackSerializer.Deserialize<NetworkMessage>(data);
@@ -270,20 +267,23 @@ public partial class UdpNetworkClient : Node
 				{
 					GD.Print($"[UdpClient] Received wrapped message type: {networkMessage.Type}");
 
-					if (networkMessage.Data == null || networkMessage.Data.Length == 0)
+					if (networkMessage.Data == null)
 					{
-						GD.PrintErr($"[UdpClient] NetworkMessage.Data is empty for type {networkMessage.Type}");
+						GD.PrintErr($"[UdpClient] NetworkMessage.Data is null for type {networkMessage.Type}");
 						return;
 					}
 
-					// Data is already MessagePack bytes, deserialize based on Type
+					// MessagePack has already deserialized Data as an object
+					// Re-serialize and deserialize to the correct type
+					var dataBytes = MessagePackSerializer.Serialize(networkMessage.Data);
+
 					switch (networkMessage.Type.ToLowerInvariant())
 					{
 						case "connect_response":
 						case "connectresponse":
 							try
 							{
-								var response = MessagePackSerializer.Deserialize<ConnectResponseData>(networkMessage.Data);
+								var response = MessagePackSerializer.Deserialize<ConnectResponseData>(dataBytes);
 								if (response != null)
 								{
 									if (response.Success)
@@ -307,7 +307,7 @@ public partial class UdpNetworkClient : Node
 						case "worldupdate":
 							try
 							{
-								var update = MessagePackSerializer.Deserialize<WorldUpdateMessage>(networkMessage.Data);
+								var update = MessagePackSerializer.Deserialize<WorldUpdateMessage>(dataBytes);
 								if (update != null && update.Players != null)
 								{
 									_updateQueue.Enqueue(update);
@@ -326,7 +326,7 @@ public partial class UdpNetworkClient : Node
 								// Try as PlayerStatesBatch first
 								try
 								{
-									var batch = MessagePackSerializer.Deserialize<PlayerStatesBatch>(networkMessage.Data);
+									var batch = MessagePackSerializer.Deserialize<PlayerStatesBatch>(dataBytes);
 									if (batch != null && batch.Players != null)
 									{
 										var update = new WorldUpdateMessage
@@ -346,7 +346,7 @@ public partial class UdpNetworkClient : Node
 								catch
 								{
 									// Try as simple list
-									var playersList = MessagePackSerializer.Deserialize<List<PlayerStateUpdate>>(networkMessage.Data);
+									var playersList = MessagePackSerializer.Deserialize<List<PlayerStateUpdate>>(dataBytes);
 									if (playersList != null && playersList.Count > 0)
 									{
 										var update = new WorldUpdateMessage
@@ -375,7 +375,7 @@ public partial class UdpNetworkClient : Node
 						case "chat_message":
 							try
 							{
-								var chat = MessagePackSerializer.Deserialize<ChatReceivedData>(networkMessage.Data);
+								var chat = MessagePackSerializer.Deserialize<ChatReceivedData>(dataBytes);
 								if (chat != null && !string.IsNullOrEmpty(chat.Message))
 								{
 									_chatQueue.Enqueue(chat);
@@ -392,7 +392,7 @@ public partial class UdpNetworkClient : Node
 						case "combat_event":
 							try
 							{
-								var combat = MessagePackSerializer.Deserialize<CombatEvent>(networkMessage.Data);
+								var combat = MessagePackSerializer.Deserialize<CombatEvent>(dataBytes);
 								if (combat != null)
 								{
 									_combatQueue.Enqueue(combat);

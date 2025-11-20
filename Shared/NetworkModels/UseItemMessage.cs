@@ -6,7 +6,7 @@ namespace MazeWars.Client.Shared.NetworkModels;
 /// <summary>
 /// Use item request from client to server.
 /// </summary>
-[MessagePackObject]
+[MessagePackObject(keyAsPropertyName: false)]
 public class UseItemMessage
 {
     [Key(0)]

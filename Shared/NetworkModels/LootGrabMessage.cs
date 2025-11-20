@@ -5,7 +5,7 @@ namespace MazeWars.Client.Shared.NetworkModels;
 /// <summary>
 /// Loot grab request from client to server.
 /// </summary>
-[MessagePackObject]
+[MessagePackObject(keyAsPropertyName: false)]
 public class LootGrabMessage
 {
     [Key(0)]

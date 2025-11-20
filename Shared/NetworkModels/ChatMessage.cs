@@ -5,7 +5,7 @@ namespace MazeWars.Client.Shared.NetworkModels;
 /// <summary>
 /// Chat message from client to server.
 /// </summary>
-[MessagePackObject]
+[MessagePackObject(keyAsPropertyName: false)]
 public class ChatMessage
 {
     [Key(0)]
