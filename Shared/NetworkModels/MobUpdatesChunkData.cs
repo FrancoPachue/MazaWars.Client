@@ -1,0 +1,20 @@
+using MessagePack;
+using System.Collections.Generic;
+
+namespace MazeWars.Client.Shared.NetworkModels;
+
+/// <summary>
+/// Chunked mob updates to avoid exceeding packet size limits.
+/// </summary>
+[MessagePackObject(keyAsPropertyName: false)]
+public class MobUpdatesChunkData
+{
+    [Key(0)]
+    public List<MobUpdate> MobUpdates { get; set; } = new();
+
+    [Key(1)]
+    public int ChunkIndex { get; set; }
+
+    [Key(2)]
+    public int TotalChunks { get; set; }
+}
