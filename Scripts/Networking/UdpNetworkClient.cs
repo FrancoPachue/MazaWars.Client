@@ -293,28 +293,12 @@ public partial class UdpNetworkClient : Node
 				switch (messageType.ToLowerInvariant())
 				{
 					case "connected":
-						// Server sends anonymous object, not ConnectResponseData
+						// Server now sends complete ConnectResponseData typed model
 						try
 						{
-							// Deserialize as dynamic object/array
-							var dataObj = MessagePackSerializer.Deserialize<object>(dataBytes);
-
-							// Server sends array format with keyAsPropertyName: false
-							if (dataObj is object[] dataArray && dataArray.Length >= 5)
+							var response = MessagePackSerializer.Deserialize<ConnectResponseData>(dataBytes);
+							if (response != null && !string.IsNullOrEmpty(response.PlayerId))
 							{
-								var response = new ConnectResponseData
-								{
-									Success = true,
-									PlayerId = dataArray[0]?.ToString() ?? string.Empty,
-									WorldId = dataArray[1]?.ToString() ?? string.Empty,
-									IsInLobby = dataArray[2] is bool b && b,
-									SessionToken = dataArray[3]?.ToString() ?? string.Empty,
-									ServerTime = 0f,
-									PlayerClass = string.Empty,
-									TeamId = string.Empty,
-									ErrorMessage = string.Empty
-								};
-
 								_isAuthenticated = true;
 								PlayerId = response.PlayerId;
 								SessionToken = response.SessionToken;
@@ -373,58 +357,38 @@ public partial class UdpNetworkClient : Node
 					case "player_states_batch":
 						try
 						{
-							// Server sends anonymous object: { Players = [...], BatchIndex, TotalBatches }
-							var dataObj = MessagePackSerializer.Deserialize<object>(dataBytes);
-
-							// Server uses array format with keyAsPropertyName: false
-							if (dataObj is object[] dataArray && dataArray.Length >= 1)
+							// Server now sends complete PlayerStatesBatchData typed model
+							var batch = MessagePackSerializer.Deserialize<PlayerStatesBatchData>(dataBytes);
+							if (batch != null && batch.Players != null && batch.Players.Count > 0)
 							{
-								// dataArray[0] = Players list
-								// dataArray[1] = BatchIndex (optional)
-								// dataArray[2] = TotalBatches (optional)
-
-								if (dataArray[0] is object[] playersArray)
+								// Convert PlayerUpdateData to PlayerStateUpdate for WorldUpdateMessage
+								var players = batch.Players.Select(p => new PlayerStateUpdate
 								{
-									var players = new List<PlayerStateUpdate>();
+									PlayerId = p.PlayerId,
+									Position = p.Position,
+									Velocity = p.Velocity,
+									Direction = p.Direction,
+									Health = p.Health,
+									MaxHealth = p.MaxHealth,
+									IsAlive = p.IsAlive,
+									IsMoving = p.IsMoving,
+									IsCasting = p.IsCasting,
+									PlayerName = string.Empty,
+									PlayerClass = string.Empty
+								}).ToList();
 
-									foreach (var playerObj in playersArray)
-									{
-										if (playerObj is object[] playerData && playerData.Length >= 13)
-										{
-											var player = new PlayerStateUpdate
-											{
-												PlayerId = playerData[0]?.ToString() ?? string.Empty,
-												Position = ParseVector2(playerData[1]),
-												Velocity = ParseVector2(playerData[2]),
-												Direction = Convert.ToSingle(playerData[3]),
-												Health = Convert.ToInt32(playerData[4]),
-												MaxHealth = Convert.ToInt32(playerData[5]),
-												IsAlive = Convert.ToBoolean(playerData[7]),
-												IsMoving = Convert.ToBoolean(playerData[8]),
-												IsCasting = Convert.ToBoolean(playerData[9]),
-												PlayerName = string.Empty,
-												PlayerClass = string.Empty
-											};
-											players.Add(player);
-										}
-									}
-
-									if (players.Count > 0)
-									{
-										var update = new WorldUpdateMessage
-										{
-											Players = players,
-											ServerTime = 0,
-											FrameNumber = 0,
-											AcknowledgedInputs = new(),
-											CombatEvents = new(),
-											LootUpdates = new(),
-											MobUpdates = new()
-										};
-										_updateQueue.Enqueue(update);
-										return;
-									}
-								}
+								var update = new WorldUpdateMessage
+								{
+									Players = players,
+									ServerTime = 0,
+									FrameNumber = 0,
+									AcknowledgedInputs = new(),
+									CombatEvents = new(),
+									LootUpdates = new(),
+									MobUpdates = new()
+								};
+								_updateQueue.Enqueue(update);
+								return;
 							}
 						}
 						catch (Exception ex)
@@ -531,20 +495,6 @@ public partial class UdpNetworkClient : Node
 	public override void _ExitTree()
 	{
 		Disconnect();
-	}
-
-	// Helper method to parse Vector2 from MessagePack object array
-	private Vector2 ParseVector2(object data)
-	{
-		if (data is object[] arr && arr.Length >= 2)
-		{
-			return new Vector2
-			{
-				X = Convert.ToSingle(arr[0]),
-				Y = Convert.ToSingle(arr[1])
-			};
-		}
-		return new Vector2();
 	}
 
 	// Debug info
