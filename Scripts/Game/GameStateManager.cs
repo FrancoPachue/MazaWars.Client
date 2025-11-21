@@ -66,9 +66,23 @@ public partial class GameStateManager : Node
 		float serverTime = update.ServerTime;
 
 		// Update acknowledged inputs for reconciliation
-		if (update.AcknowledgedInputs != null && update.AcknowledgedInputs.TryGetValue(_localPlayerId, out uint ackedSeq))
+		// DEBUG: Log acknowledgment processing
+		if (update.AcknowledgedInputs != null && update.AcknowledgedInputs.Count > 0)
 		{
-			_inputSender?.OnServerUpdate(ackedSeq);
+			GD.Print($"[GameStateManager] Received {update.AcknowledgedInputs.Count} acknowledgments in update");
+			if (update.AcknowledgedInputs.TryGetValue(_localPlayerId, out uint ackedSeq))
+			{
+				GD.Print($"[GameStateManager] Found ack for local player: {ackedSeq}");
+				_inputSender?.OnServerUpdate(ackedSeq);
+			}
+			else
+			{
+				GD.Print($"[GameStateManager] No ack found for local player ID: {_localPlayerId}");
+			}
+		}
+		else
+		{
+			GD.Print($"[GameStateManager] No acknowledgments in this update");
 		}
 
 		// Update all players

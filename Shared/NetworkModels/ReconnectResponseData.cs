@@ -7,7 +7,7 @@ namespace MazeWars.Client.Shared.NetworkModels;
 /// <summary>
 /// Server response to reconnect request with restored state.
 /// </summary>
-[MessagePackObject]
+[MessagePackObject(keyAsPropertyName: false)]
 public class ReconnectResponseData
 {
     [Key(0)]

@@ -4,7 +4,7 @@ using MessagePack;
 
 namespace MazeWars.Client.Shared.NetworkModels;
 
-[MessagePackObject]
+[MessagePackObject(keyAsPropertyName: false)]
 public class CombatEvent
 {
     [Key(0)]

@@ -127,27 +127,21 @@ public partial class MainMenu : Control
 
 	private async void OnConnectionResponse(ConnectResponseData response)
 	{
-		if (response.Success)
-		{
-			GD.Print($"[MainMenu] Connection successful! Player ID: {response.PlayerId}");
-			UpdateStatus("Connected! Loading game...");
+		// Server only sends "connected" message when connection is successful
+		GD.Print($"[MainMenu] Connection successful! Player ID: {response.PlayerId}");
+		GD.Print($"[MainMenu] Spawn Position: ({response.SpawnPosition.X}, {response.SpawnPosition.Y})");
+		GD.Print($"[MainMenu] Player Stats - Level: {response.PlayerStats.Level}, HP: {response.PlayerStats.Health}/{response.PlayerStats.MaxHealth}");
+		UpdateStatus("Connected! Loading game...");
 
-			// Initialize message handler (without NetworkManager)
-			_messageHandler.Initialize(null, _udpClient);
+		// Initialize message handler (without NetworkManager)
+		_messageHandler.Initialize(null, _udpClient);
 
-			// Initialize input sender with UDP client and player ID
-			_inputSender.Initialize(_udpClient, response.PlayerId);
+		// Initialize input sender with UDP client and player ID
+		_inputSender.Initialize(_udpClient, response.PlayerId);
 
-			// Wait a moment then load game scene
-			await Task.Delay(1000);
-			LoadGameScene();
-		}
-		else
-		{
-			GD.PrintErr($"[MainMenu] Connection rejected: {response.ErrorMessage}");
-			UpdateStatus($"Connection failed: {response.ErrorMessage}", true);
-			EnableConnectButton();
-		}
+		// Wait a moment then load game scene
+		await Task.Delay(1000);
+		LoadGameScene();
 	}
 
 	private void OnConnectionError(string error)

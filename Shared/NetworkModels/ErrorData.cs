@@ -1,16 +1,17 @@
-﻿using MessagePack;
+using MessagePack;
+using System;
 
 namespace MazeWars.Client.Shared.NetworkModels;
 
 /// <summary>
-/// Chat message from client to server.
+/// Error message sent from server to client.
 /// </summary>
 [MessagePackObject(keyAsPropertyName: false)]
-public class ChatMessage
+public class ErrorData
 {
     [Key(0)]
     public string Message { get; set; } = string.Empty;
 
     [Key(1)]
-    public string ChatType { get; set; } = "team";
+    public DateTime Timestamp { get; set; }
 }

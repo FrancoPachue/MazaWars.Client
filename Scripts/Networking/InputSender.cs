@@ -44,6 +44,10 @@ public partial class InputSender : Node
 	private float _clientStartTime;
 	private float _lastInputTime;
 
+	// Input rate limiting (to reduce network traffic)
+	private int _frameCounter = 0;
+	private const int INPUT_SEND_RATE = 3; // Send every N frames (60 FPS / 3 = 20 inputs/sec)
+
 	// Statistics
 	private int _inputsSent = 0;
 	private int _inputsAcknowledged = 0;
@@ -73,6 +77,12 @@ public partial class InputSender : Node
 			return;
 
 		_lastInputTime = (float)delta;
+		_frameCounter++;
+
+		// Rate limit: only send inputs every N frames to reduce network traffic
+		// This prevents buffer overflow when server acknowledgments are delayed
+		if (_frameCounter % INPUT_SEND_RATE != 0)
+			return;
 
 		// Read current input
 		var moveInput = ReadMovementInput();
